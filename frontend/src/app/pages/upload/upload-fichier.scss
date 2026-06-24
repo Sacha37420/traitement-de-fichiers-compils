@@ -1,0 +1,43 @@
+.page-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 24px;
+}
+
+.upload-card, .success-card {
+  max-width: 600px;
+}
+
+.file-info {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.success-card {
+  text-align: center;
+
+  .success-icon {
+    font-size: 48px;
+    color: var(--success);
+    margin-bottom: 12px;
+  }
+
+  h2 { margin-bottom: 8px; }
+
+  .file-meta {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin: 16px 0;
+  }
+
+  .actions { justify-content: center; }
+}

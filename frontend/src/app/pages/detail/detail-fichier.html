@@ -1,0 +1,98 @@
+<app-navbar />
+
+<main class="page">
+  @if (loading) { <p class="loading-msg">Chargement…</p> }
+  @else if (error) { <p class="error-msg">{{ error }}</p> }
+  @else if (fichier) {
+
+    <div class="detail-header">
+      <div class="title-row">
+        <h1>{{ fichier.nom }}</h1>
+        <span class="badge badge-blue">{{ fichier.type }}</span>
+        <span class="badge" [class.badge-green]="fichier.droits_acces === 'public'" [class.badge-gray]="fichier.droits_acces !== 'public'">
+          {{ fichier.droits_acces }}
+        </span>
+      </div>
+      <div class="action-btns">
+        <button class="btn btn-primary" (click)="openEditor()">✏️ Modifier</button>
+        <button class="btn btn-ghost" (click)="download()">⬇ Télécharger</button>
+        <button class="btn btn-ghost" (click)="viewHistorique()">📋 Historique complet</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+
+      <!-- Lecteur -->
+      <div class="card viewer-section">
+        @if (fichier.type === 'Image') {
+          <img [src]="downloadUrl" [alt]="fichier.nom" class="file-preview" />
+        } @else if (fichier.type === 'Video') {
+          <video [src]="downloadUrl" controls class="file-preview-video"></video>
+        } @else if (fichier.type === 'Audio') {
+          <audio [src]="downloadUrl" controls class="file-audio"></audio>
+        } @else if (fichier.type === 'PDF') {
+          <iframe [src]="downloadUrl" class="file-pdf" title="PDF"></iframe>
+        }
+      </div>
+
+      <!-- Métadonnées -->
+      <div class="card meta-section">
+        <h2>Informations</h2>
+        <dl class="meta-list">
+          <dt>Taille</dt><dd>{{ fichier.taille_fichier }} Mo</dd>
+          <dt>Type MIME</dt><dd>{{ fichier.fichier_type_mime }}</dd>
+          <dt>Date d'upload</dt><dd>{{ formatDate(fichier.date_upload!) }}</dd>
+          <dt>Propriétaire</dt><dd>{{ fichier.utilisateur || '(anonyme)' }}</dd>
+          <dt>Tags</dt>
+          <dd class="tags-row">
+            @for (tag of fichier.tags; track tag) {
+              <span class="badge badge-gray">{{ tag }}</span>
+            }
+            @if (fichier.tags.length === 0) { <em>Aucun tag</em> }
+          </dd>
+        </dl>
+
+        @if (fichier.metadonnees && (fichier.metadonnees | keyvalue).length > 0) {
+          <h3>Métadonnées</h3>
+          <dl class="meta-list">
+            @for (entry of fichier.metadonnees | keyvalue; track entry.key) {
+              <dt>{{ entry.key }}</dt>
+              <dd>{{ entry.value }}</dd>
+            }
+          </dl>
+        }
+      </div>
+
+    </div>
+
+    <!-- Modifications récentes -->
+    @if (modifications.length > 0) {
+      <div class="card mods-section">
+        <div class="mods-header">
+          <h2>Dernières modifications</h2>
+          <button class="btn btn-ghost" (click)="viewHistorique()">Voir tout →</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th>Date</th>
+              <th>Utilisateur</th>
+              <th>Détails</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (m of modifications.slice(0, 5); track m.id) {
+              <tr>
+                <td><span class="badge badge-blue">{{ m.action }}</span></td>
+                <td>{{ formatDate(m.date) }}</td>
+                <td>{{ m.utilisateur || '—' }}</td>
+                <td class="details-cell">{{ m.details ? (m.details | json) : '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</main>
