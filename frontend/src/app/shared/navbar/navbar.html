@@ -1,0 +1,13 @@
+<nav class="navbar">
+  <a class="brand" routerLink="/">Fichiers Compilés</a>
+
+  <div class="nav-links">
+    <a routerLink="/upload"       routerLinkActive="active">Upload</a>
+    <a routerLink="/mes-fichiers" routerLinkActive="active">Mes fichiers</a>
+  </div>
+
+  <div class="nav-user">
+    <span class="username">{{ username }}</span>
+    <button class="btn-logout" (click)="logout()">Déconnexion</button>
+  </div>
+</nav>

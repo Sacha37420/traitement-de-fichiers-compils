@@ -1,0 +1,154 @@
+<app-navbar />
+
+<main class="editeur-layout">
+
+  <!-- Sélecteur workspace (si pas de fichier direct) -->
+  @if (!fichier && workspaceItems.length > 0) {
+    <aside class="workspace-panel card">
+      <h3>Workspace</h3>
+      @for (item of workspaceItems; track item.id) {
+        <div class="ws-item" (click)="selectWorkspaceFile(item)" [class.active]="currentWorkspaceItem?.id === item.id">
+          <span>{{ item.nom_temporaire || 'Fichier #' + item.fichier_id }}</span>
+          <span class="badge badge-gray">{{ item.etat }}</span>
+        </div>
+      }
+    </aside>
+  }
+
+  <!-- Zone principale -->
+  <section class="editor-main">
+    @if (loading) {
+      <p class="loading-msg" style="padding:40px">Chargement…</p>
+    } @else if (error) {
+      <p class="error-msg" style="padding:20px">{{ error }}</p>
+    } @else if (fichier) {
+
+      <!-- Lecteur -->
+      <div class="card viewer-card">
+        <div class="viewer-header">
+          <span class="badge badge-blue">{{ fichier.type }}</span>
+          <strong>{{ fichier.nom }}</strong>
+          <span class="size">{{ fichier.taille_fichier }} Mo</span>
+        </div>
+
+        <div class="viewer-body">
+          @if (fichier.type === 'Image') {
+            <img [src]="fileUrl" [alt]="fichier.nom" class="preview-img" [style.filter]="cssFilter()" />
+          } @else if (fichier.type === 'Video') {
+            <video [src]="fileUrl" controls class="preview-video"></video>
+          } @else if (fichier.type === 'Audio') {
+            <audio [src]="fileUrl" controls class="preview-audio"></audio>
+          } @else if (fichier.type === 'PDF') {
+            <iframe [src]="fileUrl" class="preview-pdf" title="PDF"></iframe>
+          }
+        </div>
+
+        @if (previewUrl) {
+          <div class="preview-result">
+            <h4>Prévisualisation</h4>
+            <img [src]="previewUrl" alt="preview" class="preview-img" />
+          </div>
+        }
+      </div>
+
+      <!-- Sauvegarde -->
+      <div class="card save-card">
+        <div class="save-row">
+          <div class="form-group">
+            <label>Nom</label>
+            <input type="text" [(ngModel)]="nomSauvegarde" />
+          </div>
+          <div class="form-group">
+            <label>Tags</label>
+            <input type="text" [(ngModel)]="tagsSauvegarde" placeholder="tag1, tag2…" />
+          </div>
+          <div class="save-btns">
+            @if (currentWorkspaceItem) {
+              <button class="btn btn-success" (click)="save()" [disabled]="saving">
+                {{ saving ? 'Enregistrement…' : '💾 Enregistrer' }}
+              </button>
+            }
+            <button class="btn btn-ghost" (click)="download()">⬇ Télécharger</button>
+          </div>
+        </div>
+      </div>
+
+    } @else {
+      <div class="empty-state card">
+        <p>Sélectionnez un fichier dans le workspace ou <a routerLink="/upload">uploadez-en un nouveau</a>.</p>
+      </div>
+    }
+  </section>
+
+  <!-- Panneau actions -->
+  @if (fichier) {
+    <aside class="actions-panel">
+
+      <!-- Panneau d'actions -->
+      <div class="card panel-card">
+        <h3>Actions</h3>
+
+        @for (cat of actionCategories; track cat.nom) {
+          <div class="action-category">
+            <div class="cat-title">{{ cat.nom }}</div>
+            @for (action of cat.actions; track action.id) {
+              <button class="action-btn" (click)="selectAction(action)"
+                      [class.selected]="selectedAction?.id === action.id">
+                {{ action.nom }}
+              </button>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Configurateur -->
+      @if (selectedAction) {
+        <div class="card panel-card">
+          <h3>{{ selectedAction.nom }}</h3>
+          @if (selectedAction.description) {
+            <p class="action-desc">{{ selectedAction.description }}</p>
+          }
+
+          @for (field of paramFields; track field.key) {
+            <div class="form-group">
+              <label>{{ field.key }}</label>
+              <input [type]="field.type === 'float' || field.type === 'int' ? 'number' : 'text'"
+                     [step]="field.type === 'float' ? '0.1' : '1'"
+                     [(ngModel)]="actionParams[field.key]"
+                     [placeholder]="field.key" />
+            </div>
+          }
+
+          <div class="config-btns">
+            @if (fichier.type === 'Image') {
+              <button class="btn btn-ghost" (click)="preview()" [disabled]="previewLoading">
+                {{ previewLoading ? 'Chargement…' : '👁 Prévisualiser' }}
+              </button>
+            }
+            <button class="btn btn-primary" (click)="applyAction()">Appliquer</button>
+          </div>
+        </div>
+      }
+
+      <!-- Historique local -->
+      @if (historique.length > 0) {
+        <div class="card panel-card">
+          <div class="history-header">
+            <h3>Historique</h3>
+            <button class="btn btn-ghost btn-xs" (click)="undoLast()">↩ Annuler</button>
+          </div>
+          @for (entry of historique; track $index) {
+            <div class="history-item">
+              <span class="badge badge-blue">{{ entry.action }}</span>
+              @if (entry.date) {
+                <span class="history-time">{{ formatDate(entry.date) }}</span>
+              }
+            </div>
+          }
+        </div>
+      }
+
+    </aside>
+  }
+
+</main>

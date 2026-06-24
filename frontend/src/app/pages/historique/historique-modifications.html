@@ -1,0 +1,49 @@
+<app-navbar />
+
+<main class="page">
+  <div class="page-header">
+    <a [routerLink]="['/fichiers', fichierId]" class="back-link">← Retour au fichier</a>
+    <h1>Historique des modifications</h1>
+    @if (fichier) {
+      <span class="file-name">{{ fichier.nom }}</span>
+    }
+  </div>
+
+  @if (loading) { <p class="loading-msg">Chargement…</p> }
+  @else if (error) { <p class="error-msg">{{ error }}</p> }
+  @else if (modifications.length === 0) { <p class="empty-msg">Aucune modification enregistrée.</p> }
+  @else {
+    <p class="total-info">{{ total }} modification{{ total > 1 ? 's' : '' }}</p>
+
+    <div class="card table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Action</th>
+            <th>Date</th>
+            <th>Utilisateur</th>
+            <th>Détails</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of modifications; track m.id; let i = $index) {
+            <tr>
+              <td class="idx">{{ i + 1 }}</td>
+              <td><span class="badge badge-blue">{{ m.action }}</span></td>
+              <td>{{ formatDate(m.date) }}</td>
+              <td>{{ m.utilisateur || '(anonyme)' }}</td>
+              <td class="details-cell">
+                @if (m.details) {
+                  <code>{{ m.details | json }}</code>
+                } @else {
+                  <span class="text-muted">—</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</main>

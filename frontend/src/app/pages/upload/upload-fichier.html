@@ -1,0 +1,66 @@
+<app-navbar />
+
+<main class="page">
+  <h1 class="page-title">Upload d'un fichier</h1>
+
+  @if (!uploadedFichier) {
+    <div class="card upload-card">
+      <div class="form-group">
+        <label>Fichier à uploader *</label>
+        <input type="file" (change)="onFileChange($event)" accept="image/*,video/*,audio/*,.pdf" />
+        @if (selectedFile) {
+          <span class="file-info">{{ selectedFile.name }} ({{ (selectedFile.size / 1048576).toFixed(2) }} Mo)</span>
+        }
+      </div>
+
+      <div class="form-group">
+        <label>Nom du fichier *</label>
+        <input type="text" [(ngModel)]="nom" placeholder="Nom du fichier" />
+      </div>
+
+      <div class="form-group">
+        <label>Type *</label>
+        <select [(ngModel)]="type">
+          @for (opt of typeOptions; track opt) {
+            <option [value]="opt">{{ opt }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Tags (séparés par des virgules)</label>
+        <input type="text" [(ngModel)]="tagsInput" placeholder="photo, nature, vacances..." />
+      </div>
+
+      @if (error) { <p class="error-msg">{{ error }}</p> }
+
+      <div class="actions">
+        <button class="btn btn-primary" (click)="upload()" [disabled]="uploading || !selectedFile">
+          {{ uploading ? 'Upload en cours...' : 'Uploader' }}
+        </button>
+      </div>
+    </div>
+  } @else {
+    <div class="card success-card">
+      <div class="success-icon">✓</div>
+      <h2>Fichier uploadé avec succès</h2>
+      <p class="success-msg">{{ success }}</p>
+
+      <div class="file-meta">
+        <span class="badge badge-blue">{{ uploadedFichier.type }}</span>
+        @for (tag of uploadedFichier.tags; track tag) {
+          <span class="badge badge-gray">{{ tag }}</span>
+        }
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" (click)="addToWorkspaceAndEdit()">
+          Ouvrir dans l'éditeur
+        </button>
+        <button class="btn btn-ghost" (click)="reset()">
+          Uploader un autre fichier
+        </button>
+      </div>
+    </div>
+  }
+</main>
