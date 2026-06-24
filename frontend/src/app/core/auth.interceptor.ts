@@ -5,10 +5,11 @@ import { KeycloakService } from './keycloak.service';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const kc = inject(KeycloakService);
-  const token = kc.getToken();
 
-  if (token && !kc.isTokenExpired(30)) {
-    return next(req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }));
+  if (!kc.isAuthenticated) return next(req);
+
+  if (!kc.isTokenExpired(30)) {
+    return next(req.clone({ setHeaders: { Authorization: `Bearer ${kc.getToken()}` } }));
   }
 
   return from(kc.updateToken(-1)).pipe(

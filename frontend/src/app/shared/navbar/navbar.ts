@@ -12,11 +12,9 @@ import { KeycloakService } from '../../core/keycloak.service';
 export class NavbarComponent {
   private kc = inject(KeycloakService);
 
-  get username(): string {
-    return this.kc.username || this.kc.email;
-  }
+  get username(): string { return this.kc.username || this.kc.email; }
+  get isAuthenticated(): boolean { return this.kc.isAuthenticated; }
 
-  logout(): void {
-    this.kc.logout();
-  }
+  login(): void { this.kc.login(); }
+  logout(): void { this.kc.logout(); }
 }

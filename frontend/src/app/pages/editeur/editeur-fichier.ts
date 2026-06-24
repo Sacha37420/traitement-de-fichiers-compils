@@ -4,11 +4,11 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FichierService, Fichier } from '../../core/fichier.service';
 import { ActionService, Action } from '../../core/action.service';
-import { WorkspaceService, HistoriqueEntry, FichierWorkspace } from '../../core/workspace.service';
+import { WorkspaceService, HistoriqueEntry } from '../../core/workspace.service';
 import { NavbarComponent } from '../../shared/navbar/navbar';
 
 interface ActionCategory { nom: string; actions: Action[]; }
-interface ParamField { key: string; type: string; }
+interface ParamField    { key: string; type: string; }
 
 @Component({
   selector: 'app-editeur-fichier',
@@ -24,14 +24,9 @@ export class EditeurFichierComponent implements OnInit {
   private actionService = inject(ActionService);
   private workspaceService = inject(WorkspaceService);
 
-  // Fichier courant
   fichier: Fichier | null = null;
   fileType = '';
   fileUrl = '';
-
-  // Workspace
-  workspaceItems: FichierWorkspace[] = [];
-  currentWorkspaceItem: FichierWorkspace | null = null;
   historique: HistoriqueEntry[] = [];
 
   // Actions
@@ -63,32 +58,32 @@ export class EditeurFichierComponent implements OnInit {
     if (id) {
       this.loadFichier(+id);
     } else {
-      this.loadWorkspace();
+      this.router.navigate(['/traitement']);
     }
     this.loadActions(type);
   }
 
   private loadFichier(id: number): void {
-    this.fichierService.getFichier(id).subscribe({
-      next: (f) => {
-        this.fichier = f;
-        this.nomSauvegarde = f.nom;
-        this.tagsSauvegarde = f.tags.join(', ');
-        this.fileUrl = this.fichierService.downloadUrl(f.id);
-        this.loading = false;
-      },
-      error: () => { this.error = 'Impossible de charger le fichier.'; this.loading = false; },
-    });
-  }
-
-  private loadWorkspace(): void {
-    this.workspaceService.getWorkspace().subscribe({
-      next: (ws) => {
-        this.workspaceItems = ws.fichiers;
-        this.loading = false;
-      },
-      error: () => { this.loading = false; },
-    });
+    const wsItem = this.workspaceService.get(id);
+    if (wsItem) {
+      this.fichier = wsItem.fichier;
+      this.historique = [...wsItem.historiqueLocal];
+      this.nomSauvegarde = wsItem.fichier.nom;
+      this.tagsSauvegarde = wsItem.fichier.tags.join(', ');
+      this.fileUrl = this.fichierService.downloadUrl(id);
+      this.loading = false;
+    } else {
+      this.fichierService.getFichier(id).subscribe({
+        next: (f) => {
+          this.fichier = f;
+          this.nomSauvegarde = f.nom;
+          this.tagsSauvegarde = f.tags.join(', ');
+          this.fileUrl = this.fichierService.downloadUrl(f.id);
+          this.loading = false;
+        },
+        error: () => { this.error = 'Impossible de charger le fichier.'; this.loading = false; },
+      });
+    }
   }
 
   private loadActions(type: string): void {
@@ -161,11 +156,7 @@ export class EditeurFichierComponent implements OnInit {
             date: new Date().toISOString(),
           };
           this.historique.push(entry);
-
-          if (this.currentWorkspaceItem) {
-            this.currentWorkspaceItem.historique_local = [...this.historique];
-          }
-
+          this.workspaceService.addHistorique(this.fichier!.id, entry);
           this.fileUrl = this.fichierService.downloadUrl(this.fichier!.id) + '?t=' + Date.now();
           this.selectedAction = null;
           this.actionParams = {};
@@ -189,32 +180,20 @@ export class EditeurFichierComponent implements OnInit {
     this.historique.pop();
   }
 
-  selectWorkspaceFile(item: FichierWorkspace): void {
-    if (!item.fichier_id) return;
-    this.currentWorkspaceItem = item;
-    this.historique = [...(item.historique_local || [])];
-    this.loadFichier(item.fichier_id);
-    this.loadActions(item.etat || this.fileType);
-  }
-
   save(): void {
-    if (!this.fichier || !this.currentWorkspaceItem) return;
+    if (!this.fichier) return;
     this.saving = true;
     this.error = '';
-
-    this.workspaceService.finaliser(1, {
-      fichier_temporaire_id: this.currentWorkspaceItem.fichier_temporaire_id,
+    const payload = {
+      fichier_id: this.fichier.id,
       nom: this.nomSauvegarde,
       tags: this.tagsSauvegarde.split(',').map(t => t.trim()).filter(Boolean),
-      historique: this.historique,
       metadonnees: this.fichier.metadonnees,
-    }).subscribe({
-      next: () => {
-        this.saving = false;
-        this.router.navigate(['/mes-fichiers']);
-      },
+    };
+    this.fichierService.enregistrerFichier(payload).subscribe({
+      next: () => { this.saving = false; this.router.navigate(['/mes-fichiers']); },
       error: (err) => {
-        this.error = err.error?.error || 'Erreur lors de l\'enregistrement.';
+        this.error = err.error?.error || 'Erreur lors de l\'enregistrement. Êtes-vous connecté ?';
         this.saving = false;
       },
     });

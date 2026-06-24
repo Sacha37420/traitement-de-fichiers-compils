@@ -1,22 +1,26 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { FichierService, Fichier } from '../../core/fichier.service';
 import { WorkspaceService } from '../../core/workspace.service';
+import { KeycloakService } from '../../core/keycloak.service';
 import { NavbarComponent } from '../../shared/navbar/navbar';
 
 @Component({
   selector: 'app-mes-fichiers',
   standalone: true,
-  imports: [CommonModule, FormsModule, NavbarComponent],
+  imports: [CommonModule, FormsModule, RouterLink, NavbarComponent],
   templateUrl: './mes-fichiers.html',
   styleUrl: './mes-fichiers.scss',
 })
 export class MesFichiersComponent implements OnInit {
   private fichierService = inject(FichierService);
   private workspaceService = inject(WorkspaceService);
+  private kc = inject(KeycloakService);
   private router = inject(Router);
+
+  get isAuthenticated(): boolean { return this.kc.isAuthenticated; }
 
   fichiers: Fichier[] = [];
   loading = true;
@@ -30,6 +34,7 @@ export class MesFichiersComponent implements OnInit {
   readonly typeOptions = ['', 'Image', 'Video', 'Audio', 'PDF'];
 
   ngOnInit(): void {
+    if (!this.isAuthenticated) { this.loading = false; return; }
     this.loadFichiers();
   }
 
@@ -59,10 +64,8 @@ export class MesFichiersComponent implements OnInit {
   }
 
   openEditor(fichier: Fichier): void {
-    this.workspaceService.addFichierToWorkspace(fichier.id).subscribe({
-      next: () => this.router.navigate(['/editeur', fichier.type, fichier.id]),
-      error: () => this.router.navigate(['/editeur', fichier.type, fichier.id]),
-    });
+    this.workspaceService.add(fichier);
+    this.router.navigate(['/editeur', fichier.type, fichier.id]);
   }
 
   viewDetail(fichier: Fichier): void {

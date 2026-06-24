@@ -23,9 +23,9 @@ export class KeycloakService {
       clientId: env.keycloakClientId ?? 'traitement-de-fichiers-compils',
     });
     return this.kc.init({
-      onLoad: 'login-required',
+      onLoad: 'check-sso',
       checkLoginIframe: false,
-      redirectUri: env.appUrl ?? window.location.origin,
+      silentCheckSsoRedirectUri: window.location.origin + '/assets/silent-check-sso.html',
     });
   }
 
@@ -37,8 +37,10 @@ export class KeycloakService {
     return (this.kc?.tokenParsed as Record<string, unknown>)?.['email'] as string ?? '';
   }
 
-  get isAuthenticated(): boolean {
-    return this.kc?.authenticated ?? false;
+  get isAuthenticated(): boolean { return this.kc?.authenticated ?? false; }
+
+  login(): void {
+    this.kc.login();
   }
 
   getToken(): string | undefined {
