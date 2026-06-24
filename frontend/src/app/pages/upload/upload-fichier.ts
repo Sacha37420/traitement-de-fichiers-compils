@@ -68,6 +68,7 @@ export class UploadFichierComponent {
     this.fichierService.uploadFichier(formData).subscribe({
       next: (fichier) => {
         this.uploadedFichier = fichier;
+        this.workspaceService.add(fichier);
         this.success = `Fichier "${fichier.nom}" uploadé avec succès (${fichier.taille_fichier} Mo).`;
         this.uploading = false;
       },
@@ -80,10 +81,8 @@ export class UploadFichierComponent {
 
   addToWorkspaceAndEdit(): void {
     if (!this.uploadedFichier) return;
-    this.workspaceService.addFichierToWorkspace(this.uploadedFichier.id).subscribe({
-      next: () => this.router.navigate(['/editeur', this.uploadedFichier!.type, this.uploadedFichier!.id]),
-      error: () => this.router.navigate(['/editeur', this.uploadedFichier!.type, this.uploadedFichier!.id]),
-    });
+    this.workspaceService.add(this.uploadedFichier);
+    this.router.navigate(['/editeur', this.uploadedFichier.type, this.uploadedFichier.id]);
   }
 
   reset(): void {

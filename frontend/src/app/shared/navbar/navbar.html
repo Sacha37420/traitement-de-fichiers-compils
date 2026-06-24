@@ -3,11 +3,18 @@
 
   <div class="nav-links">
     <a routerLink="/upload"       routerLinkActive="active">Upload</a>
-    <a routerLink="/mes-fichiers" routerLinkActive="active">Mes fichiers</a>
+    <a routerLink="/traitement"   routerLinkActive="active">Traitement</a>
+    @if (isAuthenticated) {
+      <a routerLink="/mes-fichiers" routerLinkActive="active">Mes fichiers</a>
+    }
   </div>
 
   <div class="nav-user">
-    <span class="username">{{ username }}</span>
-    <button class="btn-logout" (click)="logout()">Déconnexion</button>
+    @if (isAuthenticated) {
+      <span class="username">{{ username }}</span>
+      <button class="btn-logout" (click)="logout()">Déconnexion</button>
+    } @else {
+      <button class="btn-logout" (click)="login()">Se connecter</button>
+    }
   </div>
 </nav>

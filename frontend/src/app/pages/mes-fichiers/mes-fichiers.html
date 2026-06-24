@@ -3,8 +3,17 @@
 <main class="page">
   <div class="page-header">
     <h1>Mes fichiers</h1>
-    <span class="total">{{ total }} fichier{{ total > 1 ? 's' : '' }}</span>
+    @if (isAuthenticated) {
+      <span class="total">{{ total }} fichier{{ total > 1 ? 's' : '' }}</span>
+    }
   </div>
+
+  @if (!isAuthenticated) {
+    <div class="card" style="padding: 40px; text-align: center;">
+      <p style="margin-bottom: 16px; color: #666;">Connectez-vous pour accéder à vos fichiers sauvegardés.</p>
+      <a routerLink="/traitement" class="btn btn-ghost" style="margin-right: 12px;">Voir le workspace local</a>
+    </div>
+  } @else {
 
   <div class="filters card">
     <div class="filter-row">
@@ -72,4 +81,6 @@
       </div>
     }
   }
+
+  } <!-- fin @if (isAuthenticated) -->
 </main>

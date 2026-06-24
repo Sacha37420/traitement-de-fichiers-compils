@@ -1,24 +1,5 @@
-import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Injectable, signal } from '@angular/core';
 import { Fichier } from './fichier.service';
-
-interface EnvWindow { __env?: { apiUrl?: string } }
-
-export interface FichierWorkspace {
-  id: number;
-  fichier_temporaire_id: string;
-  etat: string;
-  nom_temporaire: string | null;
-  historique_local: HistoriqueEntry[];
-  tags_temporaires: string[];
-  fichier_id: number | null;
-}
-
-export interface WorkspaceResponse {
-  id: number;
-  fichiers: FichierWorkspace[];
-}
 
 export interface HistoriqueEntry {
   action: string;
@@ -26,29 +7,40 @@ export interface HistoriqueEntry {
   date?: string;
 }
 
+export interface WorkspaceItem {
+  fichier: Fichier;
+  historiqueLocal: HistoriqueEntry[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class WorkspaceService {
-  private http = inject(HttpClient);
+  private _items = signal<WorkspaceItem[]>([]);
+  readonly items = this._items.asReadonly();
 
-  private get base(): string {
-    return (window as unknown as EnvWindow).__env?.apiUrl ?? 'http://localhost:8089';
+  add(fichier: Fichier): void {
+    if (this._items().some(i => i.fichier.id === fichier.id)) return;
+    this._items.update(list => [...list, { fichier, historiqueLocal: [] }]);
   }
 
-  getWorkspace(): Observable<WorkspaceResponse> {
-    return this.http.post<WorkspaceResponse>(`${this.base}/api/workspace/`, {});
+  remove(fichierId: number): void {
+    this._items.update(list => list.filter(i => i.fichier.id !== fichierId));
   }
 
-  addFichierToWorkspace(fichierId: number): Observable<WorkspaceResponse> {
-    return this.http.post<WorkspaceResponse>(`${this.base}/api/workspace/`, { fichier_id: fichierId });
+  addHistorique(fichierId: number, entry: HistoriqueEntry): void {
+    this._items.update(list => list.map(item =>
+      item.fichier.id === fichierId
+        ? { ...item, historiqueLocal: [...item.historiqueLocal, entry] }
+        : item
+    ));
   }
 
-  finaliser(workspaceId: number, payload: {
-    fichier_temporaire_id: string;
-    nom?: string;
-    tags?: string[];
-    historique?: HistoriqueEntry[];
-    metadonnees?: Record<string, unknown>;
-  }): Observable<Fichier> {
-    return this.http.post<Fichier>(`${this.base}/api/workspace/${workspaceId}/finaliser/`, payload);
+  updateFichier(fichier: Fichier): void {
+    this._items.update(list => list.map(item =>
+      item.fichier.id === fichier.id ? { ...item, fichier } : item
+    ));
+  }
+
+  get(fichierId: number): WorkspaceItem | undefined {
+    return this._items().find(i => i.fichier.id === fichierId);
   }
 }
