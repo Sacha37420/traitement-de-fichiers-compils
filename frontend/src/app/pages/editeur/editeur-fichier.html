@@ -6,10 +6,9 @@
   @if (!fichier && workspaceItems.length > 0) {
     <aside class="workspace-panel card">
       <h3>Workspace</h3>
-      @for (item of workspaceItems; track item.id) {
-        <div class="ws-item" (click)="selectWorkspaceFile(item)" [class.active]="currentWorkspaceItem?.id === item.id">
-          <span>{{ item.nom_temporaire || 'Fichier #' + item.fichier_id }}</span>
-          <span class="badge badge-gray">{{ item.etat }}</span>
+      @for (item of workspaceItems; track item.fichier.id) {
+        <div class="ws-item" (click)="selectWorkspaceFile(item)" [class.active]="currentWorkspaceItem?.fichier?.id === item.fichier.id">
+          <span>{{ item.fichier.nom }}</span>
         </div>
       }
     </aside>
@@ -63,7 +62,7 @@
             <input type="text" [(ngModel)]="tagsSauvegarde" placeholder="tag1, tag2…" />
           </div>
           <div class="save-btns">
-            @if (currentWorkspaceItem) {
+            @if (fichier) {
               <button class="btn btn-success" (click)="save()" [disabled]="saving">
                 {{ saving ? 'Enregistrement…' : '💾 Enregistrer' }}
               </button>

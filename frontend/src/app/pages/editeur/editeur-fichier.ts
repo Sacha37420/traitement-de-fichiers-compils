@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FichierService, Fichier } from '../../core/fichier.service';
 import { ActionService, Action } from '../../core/action.service';
-import { WorkspaceService, HistoriqueEntry } from '../../core/workspace.service';
+import { WorkspaceService, WorkspaceItem, HistoriqueEntry } from '../../core/workspace.service';
 import { NavbarComponent } from '../../shared/navbar/navbar';
 
 interface ActionCategory { nom: string; actions: Action[]; }
@@ -49,6 +49,20 @@ export class EditeurFichierComponent implements OnInit {
 
   // CSS filter style pour prévisualisation live (Image uniquement)
   cssFilter = signal('');
+
+  // Workspace
+  get workspaceItems(): WorkspaceItem[] { return this.workspaceService.items(); }
+  currentWorkspaceItem: WorkspaceItem | null = null;
+
+  selectWorkspaceFile(item: WorkspaceItem): void {
+    this.currentWorkspaceItem = item;
+    this.fichier = item.fichier;
+    this.historique = [...item.historiqueLocal];
+    this.nomSauvegarde = item.fichier.nom;
+    this.tagsSauvegarde = item.fichier.tags.join(', ');
+    this.fileUrl = this.fichierService.downloadUrl(item.fichier.id);
+    this.loading = false;
+  }
 
   ngOnInit(): void {
     const type = this.route.snapshot.paramMap.get('type') ?? '';
