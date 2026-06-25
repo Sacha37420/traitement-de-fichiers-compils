@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { WorkspaceService, WorkspaceItem } from '../../core/workspace.service';
 import { FichierService } from '../../core/fichier.service';
 import { NavbarComponent } from '../../shared/navbar/navbar';
@@ -8,7 +8,7 @@ import { NavbarComponent } from '../../shared/navbar/navbar';
 @Component({
   selector: 'app-traitement-fichiers',
   standalone: true,
-  imports: [CommonModule, NavbarComponent],
+  imports: [CommonModule, RouterLink, NavbarComponent],
   templateUrl: './traitement-fichiers.html',
   styleUrl: './traitement-fichiers.scss',
 })
