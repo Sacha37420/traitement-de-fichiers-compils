@@ -46,6 +46,9 @@ a:hover { text-decoration: underline; }
   font-size: 14px;
   font-weight: 500;
   transition: background .15s;
+  user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   &.btn-primary  { background: var(--primary); color: #fff; }
   &.btn-primary:hover { background: var(--primary-dark); }
   &.btn-success  { background: var(--success); color: #fff; }
