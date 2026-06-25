@@ -28,7 +28,7 @@
             "inlineStyleLanguage": "scss",
             "assets": [
               { "glob": "**/*", "input": "public" },
-              { "glob": "env.js", "input": "src/assets", "output": "assets" }
+              { "glob": "**/*", "input": "src/assets", "output": "assets" }
             ],
             "styles": ["src/styles.scss"]
           },

@@ -25,7 +25,7 @@ export class KeycloakService {
     return this.kc.init({
       onLoad: 'check-sso',
       checkLoginIframe: false,
-      silentCheckSsoRedirectUri: window.location.origin + '/assets/silent-check-sso.html',
+      silentCheckSsoRedirectUri: document.baseURI + 'assets/silent-check-sso.html',
     });
   }
 
