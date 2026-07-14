@@ -1,1 +1,1 @@
---public --port 4207 --caddy-path traitement-de-fichiers-compils
+--public --port 4207 --caddy-path traitement-de-fichiers-compils --require-group developers
