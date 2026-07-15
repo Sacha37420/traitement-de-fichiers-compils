@@ -1,5 +1,5 @@
 import { FileOperation } from './operation.model';
-import { WorkFile, deriveWorkFile, renameForMime } from '../work-file.model';
+import { WorkFile, deriveWorkFile, workFileFromBlob, renameForMime } from '../work-file.model';
 import {
   cropImage,
   recodeImage,
@@ -7,8 +7,10 @@ import {
   colorToTransparent,
   Rect,
 } from '../image-canvas.util';
+import { vectorizeImage } from '../vectorize.util';
 
 const isImage = (f: WorkFile): boolean => f.kind === 'image';
+const isRaster = (f: WorkFile): boolean => f.kind === 'image' && f.mime !== 'image/svg+xml';
 
 /** Recadrage — paramètres fournis par l'overlay interactif. */
 const crop: FileOperation = {
@@ -107,4 +109,32 @@ const colorTransparent: FileOperation = {
   },
 };
 
-export const IMAGE_OPERATIONS: FileOperation[] = [crop, compress, addAlpha, colorTransparent];
+/** Vectorisation raster → SVG (imagetracerjs). Ajoute le SVG, conserve la source. */
+const vectorize: FileOperation = {
+  id: 'image-vectorize',
+  label: 'Vectoriser (SVG)',
+  group: 'Conversion',
+  ui: 'form',
+  appliesTo: isRaster,
+  params: [
+    {
+      key: 'preset', label: 'Style', type: 'select', default: 'default',
+      options: [
+        { value: 'default', label: 'Par défaut' },
+        { value: 'detailed', label: 'Détaillé' },
+        { value: 'posterized2', label: 'Postérisé' },
+        { value: 'grayscale', label: 'Niveaux de gris' },
+      ],
+    },
+  ],
+  async run(file, params) {
+    const preset = String(params['preset'] ?? 'default');
+    const blob = await vectorizeImage(file.blob, preset);
+    return {
+      files: [workFileFromBlob(blob, renameForMime(file.name, 'image/svg+xml'), 'image/svg+xml', { origin: 'local' })],
+      replacesSource: false,
+    };
+  },
+};
+
+export const IMAGE_OPERATIONS: FileOperation[] = [crop, compress, addAlpha, colorTransparent, vectorize];

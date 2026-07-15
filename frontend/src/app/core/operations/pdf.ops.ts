@@ -4,7 +4,7 @@ import {
   deriveWorkFile,
   workFileFromBlob,
 } from '../work-file.model';
-import { reorderDeletePages, pdfToImageBlobs, mergePdfs } from '../pdf.util';
+import { reorderDeletePages, pdfToImageBlobs, mergePdfs, compressPdf } from '../pdf.util';
 
 const isPdf = (f: WorkFile): boolean => f.kind === 'pdf';
 
@@ -77,4 +77,26 @@ const merge: FileOperation = {
   },
 };
 
-export const PDF_OPERATIONS: FileOperation[] = [pages, toImages, merge];
+/** Compression rasterisée (pages → JPEG → PDF). Remplace le PDF ; perd le texte. */
+const compress: FileOperation = {
+  id: 'pdf-compress',
+  label: 'Compresser (rasterisé)',
+  group: 'Édition',
+  ui: 'form',
+  appliesTo: isPdf,
+  params: [
+    { key: 'quality', label: 'Qualité', type: 'range', default: 0.6, min: 0.3, max: 0.9, step: 0.05 },
+    {
+      key: 'scale', label: 'Résolution', type: 'range', default: 1.5, min: 1, max: 3, step: 0.5,
+      hint: 'Rasterise les pages (le texte sélectionnable est perdu). Idéal pour les PDF scannés.',
+    },
+  ],
+  async run(file, params) {
+    const quality = Number(params['quality'] ?? 0.6);
+    const scale = Number(params['scale'] ?? 1.5);
+    const blob = await compressPdf(file.blob, { scale, quality });
+    return { files: [deriveWorkFile(file, blob, 'application/pdf')], replacesSource: true };
+  },
+};
+
+export const PDF_OPERATIONS: FileOperation[] = [pages, toImages, merge, compress];

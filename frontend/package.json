@@ -16,6 +16,7 @@
     "@angular/forms": "^21.2.0",
     "@angular/platform-browser": "^21.2.0",
     "@angular/router": "^21.2.0",
+    "imagetracerjs": "^1.2.6",
     "keycloak-js": "^22.0.5",
     "marked": "^18.0.6",
     "pdf-lib": "^1.17.1",

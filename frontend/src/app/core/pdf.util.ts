@@ -132,3 +132,32 @@ export async function mergePdfs(blobs: Blob[]): Promise<Blob> {
   const bytes = await out.save();
   return new Blob([bytes as BlobPart], { type: 'application/pdf' });
 }
+
+/**
+ * Compression « rasterisée » : chaque page est rendue en JPEG (qualité/résolution
+ * choisies) puis réassemblée en PDF. Efficace sur les PDF scannés / riches en images ;
+ * **perd le texte sélectionnable** (les pages deviennent des images).
+ */
+export async function compressPdf(
+  blob: Blob,
+  opts: { scale?: number; quality?: number } = {},
+): Promise<Blob> {
+  const scale = opts.scale ?? 1.5;
+  const quality = opts.quality ?? 0.6;
+  const { doc, task } = await loadPdfDocument(blob);
+  const { PDFDocument } = await import('pdf-lib');
+  const out = await PDFDocument.create();
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const pts = page.getViewport({ scale: 1 }); // dimensions en points PDF
+    const canvas = await renderPageToCanvas(page, scale);
+    const jpeg = await canvasToBlob(canvas, 'image/jpeg', quality);
+    const img = await out.embedJpg(new Uint8Array(await jpeg.arrayBuffer()));
+    const outPage = out.addPage([pts.width, pts.height]);
+    outPage.drawImage(img, { x: 0, y: 0, width: pts.width, height: pts.height });
+    page.cleanup();
+  }
+  await task.destroy();
+  const bytes = await out.save();
+  return new Blob([bytes as BlobPart], { type: 'application/pdf' });
+}
