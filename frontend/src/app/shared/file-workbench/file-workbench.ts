@@ -6,7 +6,6 @@ import { KeycloakService } from '../../core/keycloak.service';
 import { FichierService } from '../../core/fichier.service';
 import {
   WorkFile,
-  FileKind,
   kindToBackendType,
   workFileFromBlob,
 } from '../../core/work-file.model';
@@ -56,6 +55,12 @@ export class FileWorkbenchComponent {
   pagesCtx = signal<OpCtx | null>(null);
   mergeCtx = signal<MergeCtx | null>(null);
 
+  // Clé API Mistral (OCR) — saisie une fois, persistée en localStorage.
+  private readonly MISTRAL_KEY_LS = 'mistral_api_key';
+  mistralKey = signal<string>(localStorage.getItem('mistral_api_key') ?? '');
+  keyModal = signal<{ pending: OpCtx | null } | null>(null);
+  keyInput = signal('');
+
   selectedFiles = computed(() => this.files().filter((f) => this.selected().has(f.id)));
   collectionOps = computed(() => this.registry.collectionOpsFor(this.selectedFiles()));
 
@@ -93,33 +98,74 @@ export class FileWorkbenchComponent {
 
   launch(file: WorkFile, op: FileOperation): void {
     if (this.isOpDisabled(op) || this.busy()) return;
+    // Ops nécessitant une clé API : s'assurer de la clé avant d'exécuter.
+    if (op.apiKey === 'mistral') {
+      const key = this.mistralKey();
+      if (key) void this.runOp(file.id, op, { apiKey: key });
+      else this.keyModal.set({ pending: { file, op } });
+      return;
+    }
     switch (op.ui) {
       case 'image-crop': this.cropCtx.set({ file, op }); break;
       case 'pdf-pages': this.pagesCtx.set({ file, op }); break;
-      case 'none': void this.store.applyOperation(file.id, op, {}); break;
+      case 'none': void this.runOp(file.id, op, {}); break;
       default: this.activeForm.set({ file, op, params: defaultParams(op) });
+    }
+  }
+
+  /** Exécute une opération single-file avec remontée d'erreur à l'utilisateur. */
+  private async runOp(fileId: string, op: FileOperation, params: Record<string, unknown>): Promise<void> {
+    this.error.set('');
+    try {
+      await this.store.applyOperation(fileId, op, params);
+    } catch (e) {
+      this.error.set(`« ${op.label} » a échoué : ${errMessage(e)}`);
     }
   }
 
   async applyForm(): Promise<void> {
     const a = this.activeForm();
     if (!a) return;
-    await this.store.applyOperation(a.file.id, a.op, a.params);
     this.activeForm.set(null);
+    await this.runOp(a.file.id, a.op, a.params);
   }
 
   async onCropConfirmed(rect: Rect): Promise<void> {
     const c = this.cropCtx();
     if (!c) return;
-    await this.store.applyOperation(c.file.id, c.op, { ...rect });
     this.cropCtx.set(null);
+    await this.runOp(c.file.id, c.op, { ...rect });
   }
 
   async onPagesConfirmed(order: number[]): Promise<void> {
     const c = this.pagesCtx();
     if (!c) return;
-    await this.store.applyOperation(c.file.id, c.op, { order });
     this.pagesCtx.set(null);
+    await this.runOp(c.file.id, c.op, { order });
+  }
+
+  // ── Clé API Mistral ───────────────────────────────────────────────────────
+  openKeyModal(): void {
+    this.keyInput.set(this.mistralKey());
+    this.keyModal.set({ pending: null });
+  }
+
+  async saveKey(): Promise<void> {
+    const key = this.keyInput().trim();
+    if (!key) return;
+    localStorage.setItem(this.MISTRAL_KEY_LS, key);
+    this.mistralKey.set(key);
+    const pending = this.keyModal()?.pending ?? null;
+    this.keyModal.set(null);
+    this.keyInput.set('');
+    if (pending) await this.runOp(pending.file.id, pending.op, { apiKey: key });
+  }
+
+  clearKey(): void {
+    localStorage.removeItem(this.MISTRAL_KEY_LS);
+    this.mistralKey.set('');
+    this.keyInput.set('');
+    this.keyModal.set(null);
   }
 
   // ── Opérations de collection (fusion) ────────────────────────────────────
@@ -140,9 +186,16 @@ export class FileWorkbenchComponent {
   async applyCollectionOp(): Promise<void> {
     const c = this.mergeCtx();
     if (!c) return;
-    await this.store.applyMultiOperation(c.order.map((f) => f.id), c.op, {});
+    const op = c.op;
+    const ids = c.order.map((f) => f.id);
     this.mergeCtx.set(null);
     this.selected.set(new Set());
+    this.error.set('');
+    try {
+      await this.store.applyMultiOperation(ids, op, {});
+    } catch (e) {
+      this.error.set(`« ${op.label} » a échoué : ${errMessage(e)}`);
+    }
   }
 
   // ── Sélection ─────────────────────────────────────────────────────────────
@@ -240,8 +293,9 @@ export class FileWorkbenchComponent {
     }
   }
 
-  kindLabel(kind: FileKind): string {
-    switch (kind) {
+  kindLabel(file: WorkFile): string {
+    if (file.mime === 'text/html') return 'HTML';
+    switch (file.kind) {
       case 'pdf': return 'PDF';
       case 'image': return 'Image';
       case 'video': return 'Vidéo';
@@ -249,8 +303,9 @@ export class FileWorkbenchComponent {
     }
   }
 
-  kindIcon(kind: FileKind): string {
-    switch (kind) {
+  kindIcon(file: WorkFile): string {
+    if (file.mime === 'text/html') return '🌐';
+    switch (file.kind) {
       case 'pdf': return '📄';
       case 'image': return '🖼️';
       case 'video': return '🎬';
@@ -292,4 +347,8 @@ function videoThumbnail(src: string): Promise<string> {
     };
     video.onerror = () => reject(new Error('video'));
   });
+}
+
+function errMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }

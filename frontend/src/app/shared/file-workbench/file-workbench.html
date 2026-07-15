@@ -13,6 +13,12 @@
       (click)="loadFromBackend()"
     >Charger depuis mes fichiers</button>
 
+    <button
+      type="button" class="btn btn-ghost"
+      [title]="mistralKey() ? 'Clé Mistral enregistrée — cliquer pour modifier' : 'Configurer la clé API Mistral (OCR)'"
+      (click)="openKeyModal()"
+    >🔑 Clé Mistral @if (mistralKey()) { <span class="key-dot">●</span> }</button>
+
     <span class="spacer"></span>
 
     <button type="button" class="btn btn-ghost" [disabled]="!files().length" (click)="downloadAll()">Tout télécharger</button>
@@ -66,9 +72,9 @@
             @if (thumbFor(f)) {
               <img [src]="thumbFor(f)" alt="" />
             } @else {
-              <div class="fallback">{{ kindIcon(f.kind) }}</div>
+              <div class="fallback">{{ kindIcon(f) }}</div>
             }
-            <span class="badge">{{ kindLabel(f.kind) }}</span>
+            <span class="badge">{{ kindLabel(f) }}</span>
             @if (f.kind === 'pdf') {
               <label class="pick" title="Sélectionner pour une opération multi-fichiers">
                 <input type="checkbox" [checked]="isSelected(f.id)" (change)="toggleSelect(f.id)" />
@@ -196,6 +202,40 @@
         <footer class="modal-foot">
           <button type="button" class="btn btn-ghost" (click)="mergeCtx.set(null)">Annuler</button>
           <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="applyCollectionOp()">Fusionner</button>
+        </footer>
+      </div>
+    </div>
+  }
+
+  <!-- Clé API Mistral (OCR) -->
+  @if (keyModal(); as k) {
+    <div class="modal-backdrop" (click)="keyModal.set(null)">
+      <div class="modal-sm" (click)="$event.stopPropagation()">
+        <header class="modal-head">
+          <h3>Clé API Mistral</h3>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="keyModal.set(null)">✕</button>
+        </header>
+        <div class="modal-body">
+          <label class="field">
+            <span class="flabel">Clé API</span>
+            <input type="password" autocomplete="off" placeholder="sk-..."
+                   [ngModel]="keyInput()" (ngModelChange)="keyInput.set($event)" />
+            <small class="hint">
+              Utilisée pour l'OCR → HTML. Stockée uniquement dans votre navigateur (localStorage) ;
+              l'appel se fait directement du navigateur vers l'API Mistral.
+            </small>
+          </label>
+          @if (k.pending) {
+            <p class="hint">L'opération « {{ k.pending.op.label }} » démarrera dès la clé enregistrée.</p>
+          }
+        </div>
+        <footer class="modal-foot">
+          @if (mistralKey()) {
+            <button type="button" class="btn btn-ghost" (click)="clearKey()">Effacer la clé</button>
+          }
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-ghost" (click)="keyModal.set(null)">Annuler</button>
+          <button type="button" class="btn btn-primary" [disabled]="!keyInput().trim()" (click)="saveKey()">Enregistrer</button>
         </footer>
       </div>
     </div>

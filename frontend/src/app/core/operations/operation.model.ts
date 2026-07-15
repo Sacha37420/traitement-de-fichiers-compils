@@ -45,6 +45,8 @@ export interface FileOperation {
   params?: OperationParamField[];
   /** Opération nécessitant une authentification (ops backend). */
   requiresAuth?: boolean;
+  /** Opération nécessitant une clé API externe (saisie une fois, stockée en localStorage). */
+  apiKey?: 'mistral';
   /** Opère sur une sélection de fichiers (ex. fusion de PDF). */
   multi?: boolean;
   /** Exécution sur un fichier unique (ops non-multi). */

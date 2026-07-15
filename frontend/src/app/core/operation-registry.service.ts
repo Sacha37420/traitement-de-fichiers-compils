@@ -3,6 +3,7 @@ import { WorkFile } from './work-file.model';
 import { FileOperation } from './operations/operation.model';
 import { IMAGE_OPERATIONS } from './operations/image.ops';
 import { PDF_OPERATIONS } from './operations/pdf.ops';
+import { OCR_OPERATIONS } from './operations/ocr.ops';
 
 /**
  * Registre central des opérations. `applicableTo` est recalculé à chaque rendu
@@ -11,7 +12,7 @@ import { PDF_OPERATIONS } from './operations/pdf.ops';
  */
 @Injectable({ providedIn: 'root' })
 export class OperationRegistryService {
-  private readonly all: FileOperation[] = [...IMAGE_OPERATIONS, ...PDF_OPERATIONS];
+  private readonly all: FileOperation[] = [...IMAGE_OPERATIONS, ...PDF_OPERATIONS, ...OCR_OPERATIONS];
 
   /** Opérations single-file applicables à ce fichier. */
   applicableTo(file: WorkFile): FileOperation[] {

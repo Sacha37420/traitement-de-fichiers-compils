@@ -79,7 +79,12 @@ export class WorkFileStore {
     op: FileOperation,
     params: Record<string, unknown>,
   ): Promise<void> {
-    const selected = this._files().filter((f) => fileIds.includes(f.id));
+    // Respecter l'ORDRE de `fileIds` (ex. ordre de fusion PDF choisi par l'utilisateur),
+    // pas l'ordre d'affichage du store.
+    const byId = new Map(this._files().map((f) => [f.id, f]));
+    const selected = fileIds
+      .map((id) => byId.get(id))
+      .filter((f): f is WorkFile => f !== undefined);
     if (!op.runMulti || selected.length === 0) return;
     this._busy.set(true);
     try {

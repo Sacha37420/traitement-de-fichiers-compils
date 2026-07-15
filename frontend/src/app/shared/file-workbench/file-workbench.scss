@@ -165,12 +165,14 @@
 
 .field { display: flex; flex-direction: column; gap: 6px; }
 .flabel { font-size: 13px; font-weight: 600; }
-.field input[type=text], .field input[type=number], .field select {
+.field input[type=text], .field input[type=number], .field input[type=password], .field select {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font-size: 14px;
 }
+
+.key-dot { color: var(--success); font-size: 10px; vertical-align: middle; margin-left: 2px; }
 .field input[type=color] { width: 48px; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius); }
 .range-row { display: flex; align-items: center; gap: 10px; }
 .range-row input[type=range] { flex: 1; }

@@ -142,6 +142,7 @@ export function mimeToExt(mime: string): string {
     case 'image/svg+xml': return 'svg';
     case 'video/mp4': return 'mp4';
     case 'video/webm': return 'webm';
+    case 'text/html': return 'html';
     default: return '';
   }
 }
