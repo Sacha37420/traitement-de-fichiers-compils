@@ -3,6 +3,9 @@
 
   <div class="nav-links">
     <a routerLink="/atelier" routerLinkActive="active">Atelier</a>
+    @if (isAuthenticated) {
+      <a routerLink="/mes-fichiers" routerLinkActive="active">Mes fichiers</a>
+    }
   </div>
 
   <div class="nav-user">

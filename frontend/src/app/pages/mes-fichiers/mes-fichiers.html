@@ -1,0 +1,71 @@
+<app-navbar />
+
+<div class="page">
+  <header class="mf-head">
+    <h1>Mes fichiers</h1>
+    <p>Vos fichiers enregistrés sur le serveur. Rouvrez-les dans l'atelier pour les retravailler.</p>
+  </header>
+
+  @if (!isAuthenticated) {
+    <div class="card mf-empty">
+      <p>Connectez-vous pour accéder à vos fichiers enregistrés.</p>
+      <button type="button" class="btn btn-primary" (click)="login()">Se connecter</button>
+    </div>
+  } @else {
+
+    @if (message()) { <p class="mf-msg ok">{{ message() }}</p> }
+    @if (error())   { <p class="mf-msg err">{{ error() }}</p> }
+
+    @if (loading()) {
+      <p class="muted">Chargement…</p>
+    } @else if (!fichiers().length) {
+      <div class="card mf-empty">
+        <p>Aucun fichier enregistré pour l'instant.</p>
+        <a class="btn btn-primary" routerLink="/atelier">Aller à l'atelier</a>
+      </div>
+    } @else {
+      <div class="card mf-tablewrap">
+        <table class="mf-table">
+          <thead>
+            <tr>
+              <th>Nom</th>
+              <th>Type</th>
+              <th>Taille</th>
+              <th>Ajouté le</th>
+              <th class="actions-col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (f of fichiers(); track f.id) {
+              <tr>
+                <td class="fname" [title]="f.nom">{{ f.nom }}</td>
+                <td><span class="badge">{{ f.type }}</span></td>
+                <td>{{ formatSize(f.taille_fichier) }}</td>
+                <td>{{ formatDate(f.date_upload) }}</td>
+                <td class="actions-col">
+                  @if (isPendingDelete(f.id)) {
+                    <span class="confirm">Confirmer ?</span>
+                    <button type="button" class="btn btn-danger btn-sm" (click)="confirmDelete(f)">Oui, supprimer</button>
+                    <button type="button" class="btn btn-ghost btn-sm" (click)="cancelDelete()">Annuler</button>
+                  } @else {
+                    <button type="button" class="btn btn-ghost btn-sm" (click)="openInAtelier(f)">Ouvrir dans l'atelier</button>
+                    <button type="button" class="btn btn-ghost btn-sm" (click)="download(f)">Télécharger</button>
+                    <button type="button" class="btn btn-danger btn-sm" (click)="askDelete(f)">Supprimer</button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      @if (totalPages() > 1) {
+        <div class="mf-pager">
+          <button type="button" class="btn btn-ghost btn-sm" [disabled]="page() <= 1" (click)="goto(page() - 1)">← Précédent</button>
+          <span class="muted">Page {{ page() }} / {{ totalPages() }} — {{ count() }} fichier(s)</span>
+          <button type="button" class="btn btn-ghost btn-sm" [disabled]="page() >= totalPages()" (click)="goto(page() + 1)">Suivant →</button>
+        </div>
+      }
+    }
+  }
+</div>
