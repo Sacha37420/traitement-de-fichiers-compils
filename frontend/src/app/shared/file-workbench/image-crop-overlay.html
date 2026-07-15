@@ -1,0 +1,35 @@
+<div class="modal-backdrop" (click)="cancelled.emit()">
+  <div class="modal" (click)="$event.stopPropagation()">
+    <header class="modal-head">
+      <h3>Recadrer — {{ file.name }}</h3>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="cancelled.emit()">✕</button>
+    </header>
+
+    <div
+      #wrap
+      class="crop-wrap"
+      (pointermove)="onMove($event)"
+      (pointerup)="end()"
+      (pointerleave)="end()"
+    >
+      <div class="crop-stage">
+        <img #imgEl [src]="file.previewUrl" alt="" (load)="onImgLoad(imgEl)" draggable="false" />
+        <div
+          class="crop-rect"
+          [style.left.px]="rect().x"
+          [style.top.px]="rect().y"
+          [style.width.px]="rect().w"
+          [style.height.px]="rect().h"
+          (pointerdown)="startMove($event)"
+        >
+          <span class="crop-handle" (pointerdown)="startResize($event)"></span>
+        </div>
+      </div>
+    </div>
+
+    <footer class="modal-foot">
+      <button type="button" class="btn btn-ghost" (click)="cancelled.emit()">Annuler</button>
+      <button type="button" class="btn btn-primary" (click)="apply()">Recadrer</button>
+    </footer>
+  </div>
+</div>

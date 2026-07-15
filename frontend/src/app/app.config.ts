@@ -6,7 +6,9 @@ import { KeycloakService } from './core/keycloak.service';
 import { authInterceptor } from './core/auth.interceptor';
 
 function initKeycloak(kc: KeycloakService): () => Promise<boolean> {
-  return () => kc.init();
+  // Ne jamais bloquer le bootstrap : l'atelier doit rester accessible hors
+  // connexion (Keycloak injoignable ⇒ simplement non authentifié).
+  return () => kc.init().catch(() => false);
 }
 
 export const appConfig: ApplicationConfig = {

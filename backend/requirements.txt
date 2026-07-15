@@ -6,4 +6,3 @@ django-cors-headers>=4.3
 drf-spectacular[sidecar]>=0.26
 PyJWT>=2.8
 cryptography>=42.0
-Pillow>=10.0

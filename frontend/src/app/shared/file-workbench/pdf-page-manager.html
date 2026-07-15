@@ -1,0 +1,38 @@
+<div class="modal-backdrop" (click)="cancelled.emit()">
+  <div class="modal" (click)="$event.stopPropagation()">
+    <header class="modal-head">
+      <h3>Pages — {{ file.name }}</h3>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="cancelled.emit()">✕</button>
+    </header>
+
+    <div class="pm-body">
+      @if (loading()) {
+        <p class="muted">Chargement des pages…</p>
+      }
+      @if (error()) {
+        <p class="err">{{ error() }}</p>
+      }
+
+      <div class="pm-grid">
+        @for (p of pages(); track p.index; let i = $index) {
+          <div class="pm-page">
+            <img [src]="p.thumb" alt="Page {{ p.index + 1 }}" />
+            <div class="pm-tools">
+              <button type="button" class="btn btn-ghost btn-sm" [disabled]="i === 0" (click)="move(i, -1)" title="Reculer">◀</button>
+              <span class="pm-num">p.{{ p.index + 1 }}</span>
+              <button type="button" class="btn btn-ghost btn-sm" [disabled]="i === pages().length - 1" (click)="move(i, 1)" title="Avancer">▶</button>
+              <button type="button" class="btn btn-danger btn-sm" (click)="remove(i)" title="Supprimer">🗑</button>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+
+    <footer class="modal-foot">
+      <span class="muted">{{ pages().length }} page(s) conservée(s)</span>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" (click)="cancelled.emit()">Annuler</button>
+      <button type="button" class="btn btn-primary" [disabled]="loading() || pages().length === 0" (click)="apply()">Appliquer</button>
+    </footer>
+  </div>
+</div>

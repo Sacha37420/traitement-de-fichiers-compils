@@ -49,13 +49,6 @@ DB_SCHEMA = _DB_SCHEMA
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 USE_TZ = True
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'preview-cache',
-    }
-}
-
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -158,3 +151,6 @@ TEMPLATES = [
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100 MB
 FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600
+
+# Limite de poids par fichier envoyé au backend (défaut : 25 Mo).
+MAX_FICHIER_OCTETS = config('MAX_FICHIER_OCTETS', default=26214400, cast=int)

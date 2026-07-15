@@ -1,0 +1,204 @@
+<div class="wb">
+
+  <!-- Barre d'outils -->
+  <div class="wb-toolbar card">
+    <label class="btn btn-primary">
+      Importer des fichiers
+      <input type="file" multiple [accept]="accept" (change)="onInputChange($event)" hidden />
+    </label>
+    <button
+      type="button" class="btn btn-ghost"
+      [disabled]="!isAuthenticated"
+      [title]="isAuthenticated ? '' : 'Connectez-vous pour accéder au serveur'"
+      (click)="loadFromBackend()"
+    >Charger depuis mes fichiers</button>
+
+    <span class="spacer"></span>
+
+    <button type="button" class="btn btn-ghost" [disabled]="!files().length" (click)="downloadAll()">Tout télécharger</button>
+    <button
+      type="button" class="btn btn-ghost"
+      [disabled]="!files().length || !isAuthenticated"
+      [title]="isAuthenticated ? '' : 'Connectez-vous pour enregistrer sur le serveur'"
+      (click)="pushAll()"
+    >Tout enregistrer</button>
+    <button type="button" class="btn btn-danger" [disabled]="!files().length" (click)="clearAll()">Vider</button>
+  </div>
+
+  @if (!isAuthenticated) {
+    <p class="wb-hint">
+      Mode hors connexion : import, traitements et téléchargement fonctionnent normalement.
+      Connectez-vous pour charger vos fichiers du serveur ou les y enregistrer.
+    </p>
+  }
+  @if (message()) { <p class="wb-msg ok">{{ message() }}</p> }
+  @if (error())   { <p class="wb-msg err">{{ error() }}</p> }
+
+  <!-- Zone d'import -->
+  <label
+    class="dropzone"
+    [class.over]="dragOver()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)"
+  >
+    <input type="file" multiple [accept]="accept" (change)="onInputChange($event)" hidden />
+    <span class="dz-title">Glissez-déposez vos fichiers ici</span>
+    <small class="dz-sub">ou cliquez pour parcourir — images, PDF, vidéos</small>
+  </label>
+
+  <!-- Opérations de collection (sélection) -->
+  @if (collectionOps().length) {
+    <div class="wb-collection card">
+      <strong>{{ selectedFiles().length }}</strong> fichier(s) sélectionné(s) :
+      @for (op of collectionOps(); track op.id) {
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="busy()" (click)="startCollectionOp(op)">{{ op.label }}</button>
+      }
+    </div>
+  }
+
+  <!-- Grille de fichiers -->
+  @if (files().length) {
+    <div class="wb-grid">
+      @for (f of files(); track f.id) {
+        <div class="fcard card" [class.selected]="isSelected(f.id)">
+          <div class="fcard-preview">
+            @if (thumbFor(f)) {
+              <img [src]="thumbFor(f)" alt="" />
+            } @else {
+              <div class="fallback">{{ kindIcon(f.kind) }}</div>
+            }
+            <span class="badge">{{ kindLabel(f.kind) }}</span>
+            @if (f.kind === 'pdf') {
+              <label class="pick" title="Sélectionner pour une opération multi-fichiers">
+                <input type="checkbox" [checked]="isSelected(f.id)" (change)="toggleSelect(f.id)" />
+              </label>
+            }
+          </div>
+
+          <div class="fcard-body">
+            <div class="fname" [title]="f.name">{{ f.name }}</div>
+            <div class="fmeta">{{ formatSize(f.blob.size) }} · {{ f.history.length }} op.</div>
+            <div class="fops">
+              @for (op of opsFor(f); track op.id) {
+                <button
+                  type="button" class="btn btn-ghost btn-sm"
+                  [disabled]="isOpDisabled(op) || busy()"
+                  (click)="launch(f, op)"
+                >{{ op.label }}</button>
+              } @empty {
+                <span class="muted">Aucune opération disponible</span>
+              }
+            </div>
+          </div>
+
+          <div class="fcard-foot">
+            <button type="button" class="btn btn-ghost btn-sm" (click)="download(f)">Télécharger</button>
+            <button
+              type="button" class="btn btn-ghost btn-sm"
+              [disabled]="!isAuthenticated"
+              [title]="isAuthenticated ? '' : 'Connectez-vous pour enregistrer sur le serveur'"
+              (click)="push(f)"
+            >Enregistrer</button>
+            <button type="button" class="btn btn-danger btn-sm" (click)="remove(f.id)">Supprimer</button>
+          </div>
+        </div>
+      }
+    </div>
+  } @else {
+    <p class="wb-empty muted">Aucun fichier chargé. Importez-en pour commencer.</p>
+  }
+
+  @if (busy()) { <div class="wb-busy">Traitement en cours…</div> }
+
+  <!-- Panneau de paramètres (opérations 'form') -->
+  @if (activeForm(); as a) {
+    <div class="modal-backdrop" (click)="activeForm.set(null)">
+      <div class="modal-sm" (click)="$event.stopPropagation()">
+        <header class="modal-head">
+          <h3>{{ a.op.label }}</h3>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="activeForm.set(null)">✕</button>
+        </header>
+        <div class="modal-body">
+          @for (field of a.op.params ?? []; track field.key) {
+            <label class="field">
+              <span class="flabel">{{ field.label }}</span>
+              @switch (field.type) {
+                @case ('select') {
+                  <select [ngModel]="a.params[field.key]" (ngModelChange)="a.params[field.key] = $event">
+                    @for (o of field.options ?? []; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+                  </select>
+                }
+                @case ('range') {
+                  <span class="range-row">
+                    <input type="range" [min]="field.min ?? 0" [max]="field.max ?? 100" [step]="field.step ?? 1"
+                           [ngModel]="a.params[field.key]" (ngModelChange)="a.params[field.key] = $event" />
+                    <em class="range-val">{{ a.params[field.key] }}</em>
+                  </span>
+                }
+                @case ('number') {
+                  <input type="number" [step]="field.step ?? 1"
+                         [ngModel]="a.params[field.key]" (ngModelChange)="a.params[field.key] = $event" />
+                }
+                @case ('color') {
+                  <input type="color" [ngModel]="a.params[field.key]" (ngModelChange)="a.params[field.key] = $event" />
+                }
+                @case ('boolean') {
+                  <input type="checkbox" [ngModel]="a.params[field.key]" (ngModelChange)="a.params[field.key] = $event" />
+                }
+                @default {
+                  <input type="text" [ngModel]="a.params[field.key]" (ngModelChange)="a.params[field.key] = $event" />
+                }
+              }
+              @if (field.hint) { <small class="hint">{{ field.hint }}</small> }
+            </label>
+          }
+        </div>
+        <footer class="modal-foot">
+          <button type="button" class="btn btn-ghost" (click)="activeForm.set(null)">Annuler</button>
+          <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="applyForm()">Appliquer</button>
+        </footer>
+      </div>
+    </div>
+  }
+
+  <!-- Recadrage interactif -->
+  @if (cropCtx(); as c) {
+    <app-image-crop-overlay [file]="c.file" (confirmed)="onCropConfirmed($event)" (cancelled)="cropCtx.set(null)" />
+  }
+
+  <!-- Gestionnaire de pages PDF -->
+  @if (pagesCtx(); as c) {
+    <app-pdf-page-manager [file]="c.file" (confirmed)="onPagesConfirmed($event)" (cancelled)="pagesCtx.set(null)" />
+  }
+
+  <!-- Ordre de fusion -->
+  @if (mergeCtx(); as m) {
+    <div class="modal-backdrop" (click)="mergeCtx.set(null)">
+      <div class="modal-sm" (click)="$event.stopPropagation()">
+        <header class="modal-head">
+          <h3>{{ m.op.label }}</h3>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="mergeCtx.set(null)">✕</button>
+        </header>
+        <div class="modal-body">
+          <p class="hint">Ordre de fusion (de haut en bas) :</p>
+          <ol class="merge-list">
+            @for (f of m.order; track f.id; let i = $index) {
+              <li>
+                <span class="mname" [title]="f.name">{{ f.name }}</span>
+                <span class="spacer"></span>
+                <button type="button" class="btn btn-ghost btn-sm" [disabled]="i === 0" (click)="moveMerge(i, -1)">▲</button>
+                <button type="button" class="btn btn-ghost btn-sm" [disabled]="i === m.order.length - 1" (click)="moveMerge(i, 1)">▼</button>
+              </li>
+            }
+          </ol>
+        </div>
+        <footer class="modal-foot">
+          <button type="button" class="btn btn-ghost" (click)="mergeCtx.set(null)">Annuler</button>
+          <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="applyCollectionOp()">Fusionner</button>
+        </footer>
+      </div>
+    </div>
+  }
+
+</div>
