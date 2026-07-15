@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Fichier
+from .models import Fichier, Partage
 from .serializers import FichierSerializer
 
 
@@ -29,25 +29,37 @@ def _type_depuis_mime(mime: str) -> str:
     return 'PDF'
 
 
-class FichiersView(APIView):
-    """GET : mes fichiers. POST : upload d'un fichier qui m'appartient.
+def _owned(request, pk) -> Fichier:
+    """Le fichier s'il m'appartient, sinon 404."""
+    return get_object_or_404(Fichier, pk=pk, proprietaire=request.user.email)
 
-    Toutes les opérations sont réservées à l'utilisateur authentifié et cloisonnées
-    à ses propres fichiers (`proprietaire`). L'authentification (azp + groupes) est
-    vérifiée par KeycloakJWTAuthentication.
-    """
+
+def _accessible(request, pk) -> Fichier:
+    """Le fichier si je le possède OU s'il m'est partagé, sinon 404."""
+    fichier = get_object_or_404(Fichier, pk=pk)
+    email = (request.user.email or '').lower()
+    if fichier.proprietaire == request.user.email:
+        return fichier
+    if fichier.partages.filter(destinataire=email).exists():
+        return fichier
+    raise Http404
+
+
+class FichiersView(APIView):
+    """GET : mes fichiers. POST : upload d'un fichier qui m'appartient."""
 
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
-        qs = Fichier.objects.filter(proprietaire=request.user.email)
+        qs = Fichier.objects.filter(proprietaire=request.user.email).prefetch_related('partages')
         type_filter = request.query_params.get('type')
         if type_filter:
             qs = qs.filter(type=type_filter)
         paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
-        return paginator.get_paginated_response(FichierSerializer(page, many=True).data)
+        data = FichierSerializer(page, many=True, context={'request': request}).data
+        return paginator.get_paginated_response(data)
 
     def post(self, request):
         fichier_file = request.FILES.get('fichier')
@@ -75,32 +87,71 @@ class FichiersView(APIView):
             fichier_type_mime=mime,
             proprietaire=request.user.email,
         )
-        return Response(FichierSerializer(fichier).data, status=201)
+        return Response(FichierSerializer(fichier, context={'request': request}).data, status=201)
 
 
-class FichierDetailView(APIView):
-    """GET : détail d'un de mes fichiers. DELETE : suppression."""
+class PartagesAvecMoiView(APIView):
+    """GET : fichiers que d'autres ont partagés avec moi."""
 
     permission_classes = [IsAuthenticated]
 
-    def _mine(self, request, pk) -> Fichier:
-        return get_object_or_404(Fichier, pk=pk, proprietaire=request.user.email)
+    def get(self, request):
+        email = (request.user.email or '').lower()
+        qs = (
+            Fichier.objects
+            .filter(partages__destinataire=email)
+            .distinct()
+            .prefetch_related('partages')
+        )
+        paginator = StandardPagination()
+        page = paginator.paginate_queryset(qs, request)
+        data = FichierSerializer(page, many=True, context={'request': request}).data
+        return paginator.get_paginated_response(data)
+
+
+class FichierDetailView(APIView):
+    """GET : détail (propriétaire ou destinataire). DELETE : propriétaire uniquement."""
+
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
-        return Response(FichierSerializer(self._mine(request, pk)).data)
+        fichier = _accessible(request, pk)
+        return Response(FichierSerializer(fichier, context={'request': request}).data)
 
     def delete(self, request, pk):
-        self._mine(request, pk).delete()
+        _owned(request, pk).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class FichierDownloadView(APIView):
-    """GET : binaire d'un de mes fichiers."""
+    """GET : binaire (propriétaire ou destinataire)."""
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
-        fichier = get_object_or_404(Fichier, pk=pk, proprietaire=request.user.email)
+        fichier = _accessible(request, pk)
         response = HttpResponse(bytes(fichier.fichier_binaire), content_type=fichier.fichier_type_mime)
         response['Content-Disposition'] = f'attachment; filename="{fichier.nom}"'
         return response
+
+
+class FichierPartagesView(APIView):
+    """POST : partager mon fichier avec un email. DELETE : retirer un partage."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        fichier = _owned(request, pk)
+        email = (request.data.get('email') or '').strip().lower()
+        if not email or '@' not in email:
+            return Response({'error': 'Adresse email invalide.'}, status=400)
+        if email == (request.user.email or '').lower():
+            return Response({'error': 'Vous êtes déjà propriétaire de ce fichier.'}, status=400)
+        Partage.objects.get_or_create(fichier=fichier, destinataire=email)
+        return Response(FichierSerializer(fichier, context={'request': request}).data, status=201)
+
+    def delete(self, request, pk):
+        fichier = _owned(request, pk)
+        email = (request.data.get('email') or request.query_params.get('email') or '').strip().lower()
+        Partage.objects.filter(fichier=fichier, destinataire=email).delete()
+        return Response(FichierSerializer(fichier, context={'request': request}).data)

@@ -3,7 +3,7 @@
 <div class="page">
   <header class="mf-head">
     <h1>Mes fichiers</h1>
-    <p>Vos fichiers enregistrés sur le serveur. Rouvrez-les dans l'atelier pour les retravailler.</p>
+    <p>Vos fichiers enregistrés sur le serveur. Rouvrez-les dans l'atelier pour les retravailler, ou partagez-les.</p>
   </header>
 
   @if (!isAuthenticated) {
@@ -13,6 +13,11 @@
     </div>
   } @else {
 
+    <div class="mf-tabs">
+      <button type="button" class="tab" [class.active]="mode() === 'mine'" (click)="setMode('mine')">Mes fichiers</button>
+      <button type="button" class="tab" [class.active]="mode() === 'shared'" (click)="setMode('shared')">Partagés avec moi</button>
+    </div>
+
     @if (message()) { <p class="mf-msg ok">{{ message() }}</p> }
     @if (error())   { <p class="mf-msg err">{{ error() }}</p> }
 
@@ -20,8 +25,12 @@
       <p class="muted">Chargement…</p>
     } @else if (!fichiers().length) {
       <div class="card mf-empty">
-        <p>Aucun fichier enregistré pour l'instant.</p>
-        <a class="btn btn-primary" routerLink="/atelier">Aller à l'atelier</a>
+        @if (mode() === 'mine') {
+          <p>Aucun fichier enregistré pour l'instant.</p>
+          <a class="btn btn-primary" routerLink="/atelier">Aller à l'atelier</a>
+        } @else {
+          <p>Aucun fichier ne vous a été partagé.</p>
+        }
       </div>
     } @else {
       <div class="card mf-tablewrap">
@@ -31,7 +40,7 @@
               <th>Nom</th>
               <th>Type</th>
               <th>Taille</th>
-              <th>Ajouté le</th>
+              <th>{{ mode() === 'mine' ? 'Ajouté le' : 'Propriétaire' }}</th>
               <th class="actions-col">Actions</th>
             </tr>
           </thead>
@@ -41,7 +50,7 @@
                 <td class="fname" [title]="f.nom">{{ f.nom }}</td>
                 <td><span class="badge">{{ f.type }}</span></td>
                 <td>{{ formatSize(f.taille_fichier) }}</td>
-                <td>{{ formatDate(f.date_upload) }}</td>
+                <td>{{ mode() === 'mine' ? formatDate(f.date_upload) : f.proprietaire }}</td>
                 <td class="actions-col">
                   @if (isPendingDelete(f.id)) {
                     <span class="confirm">Confirmer ?</span>
@@ -50,10 +59,43 @@
                   } @else {
                     <button type="button" class="btn btn-ghost btn-sm" (click)="openInAtelier(f)">Ouvrir dans l'atelier</button>
                     <button type="button" class="btn btn-ghost btn-sm" (click)="download(f)">Télécharger</button>
-                    <button type="button" class="btn btn-danger btn-sm" (click)="askDelete(f)">Supprimer</button>
+                    @if (mode() === 'mine') {
+                      <button type="button" class="btn btn-ghost btn-sm" [class.active]="isSharing(f.id)" (click)="isSharing(f.id) ? closeShare() : openShare(f)">
+                        Partager @if (f.partages.length) { <span class="count">({{ f.partages.length }})</span> }
+                      </button>
+                      <button type="button" class="btn btn-danger btn-sm" (click)="askDelete(f)">Supprimer</button>
+                    }
                   }
                 </td>
               </tr>
+
+              @if (mode() === 'mine' && isSharing(f.id)) {
+                <tr class="share-row">
+                  <td colspan="5">
+                    <div class="share-panel">
+                      <div class="share-add">
+                        <input type="email" placeholder="email@exemple.com"
+                               [ngModel]="shareEmail()" (ngModelChange)="shareEmail.set($event)"
+                               (keyup.enter)="addShare(f)" />
+                        <button type="button" class="btn btn-primary btn-sm" (click)="addShare(f)">Partager</button>
+                        <button type="button" class="btn btn-ghost btn-sm" (click)="closeShare()">Fermer</button>
+                      </div>
+                      @if (f.partages.length) {
+                        <ul class="share-list">
+                          @for (email of f.partages; track email) {
+                            <li>
+                              <span>{{ email }}</span>
+                              <button type="button" class="btn btn-ghost btn-sm" (click)="removeShare(f, email)">Retirer</button>
+                            </li>
+                          }
+                        </ul>
+                      } @else {
+                        <p class="muted">Pas encore partagé.</p>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
             }
           </tbody>
         </table>

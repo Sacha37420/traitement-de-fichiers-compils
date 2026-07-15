@@ -70,3 +70,43 @@
   gap: 16px;
   margin-top: 16px;
 }
+
+.mf-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+.mf-tabs .tab {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.mf-tabs .tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+.count { opacity: .8; }
+.btn.active { background: var(--bg); }
+
+.share-row td { background: var(--bg); padding: 0 14px 14px; }
+.share-panel { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.share-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.share-add input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+.share-list { list-style: none; display: flex; flex-direction: column; gap: 4px; max-width: 480px; }
+.share-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+}

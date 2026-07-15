@@ -29,3 +29,21 @@ class Fichier(models.Model):
 
     def __str__(self):
         return self.nom
+
+
+class Partage(models.Model):
+    """Partage d'un fichier à une personne, identifiée par son email (Keycloak)."""
+
+    fichier = models.ForeignKey(Fichier, on_delete=models.CASCADE, related_name='partages')
+    destinataire = models.CharField(max_length=255, db_index=True)  # email, en minuscules
+    date_partage = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'partages'
+        ordering = ['destinataire']
+        constraints = [
+            models.UniqueConstraint(fields=['fichier', 'destinataire'], name='unique_partage'),
+        ]
+
+    def __str__(self):
+        return f'{self.fichier_id} -> {self.destinataire}'

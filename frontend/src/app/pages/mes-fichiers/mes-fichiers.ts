@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { FichierService, Fichier } from '../../core/fichier.service';
 import { WorkFileStore } from '../../core/workfile-store.service';
@@ -6,15 +7,17 @@ import { KeycloakService } from '../../core/keycloak.service';
 import { workFileFromBlob } from '../../core/work-file.model';
 import { NavbarComponent } from '../../shared/navbar/navbar';
 
+type Mode = 'mine' | 'shared';
+
 /**
- * Gestionnaire de fichiers backend : liste les fichiers de l'utilisateur stockés
- * sur le serveur, permet de les télécharger, les rouvrir dans l'atelier ou les
- * supprimer. Nécessite l'authentification (sinon invite à se connecter).
+ * Gestionnaire de fichiers backend : « Mes fichiers » (liste, télécharger, rouvrir
+ * dans l'atelier, supprimer, partager par email) et « Partagés avec moi » (fichiers
+ * que d'autres m'ont partagés — lecture seule). Nécessite l'authentification.
  */
 @Component({
   selector: 'app-mes-fichiers',
   standalone: true,
-  imports: [NavbarComponent, RouterLink],
+  imports: [NavbarComponent, RouterLink, FormsModule],
   templateUrl: './mes-fichiers.html',
   styleUrl: './mes-fichiers.scss',
 })
@@ -24,6 +27,7 @@ export class MesFichiersComponent implements OnInit {
   private kc = inject(KeycloakService);
   private router = inject(Router);
 
+  mode = signal<Mode>('mine');
   fichiers = signal<Fichier[]>([]);
   loading = signal(false);
   error = signal('');
@@ -31,7 +35,10 @@ export class MesFichiersComponent implements OnInit {
   page = signal(1);
   count = signal(0);
   readonly pageSize = 12;
+
   private pendingDelete = signal<number | null>(null);
+  private sharing = signal<number | null>(null);
+  shareEmail = signal('');
 
   totalPages = computed(() => Math.max(1, Math.ceil(this.count() / this.pageSize)));
 
@@ -41,17 +48,29 @@ export class MesFichiersComponent implements OnInit {
     if (this.isAuthenticated) this.load();
   }
 
+  setMode(m: Mode): void {
+    if (this.mode() === m) return;
+    this.mode.set(m);
+    this.page.set(1);
+    this.pendingDelete.set(null);
+    this.sharing.set(null);
+    this.load();
+  }
+
   load(): void {
     this.loading.set(true);
     this.error.set('');
-    this.fichierService.getMesFichiers({ page: this.page() }).subscribe({
+    const req = this.mode() === 'mine'
+      ? this.fichierService.getMesFichiers({ page: this.page() })
+      : this.fichierService.getPartagesAvecMoi({ page: this.page() });
+    req.subscribe({
       next: (res) => {
         this.fichiers.set(res.results);
         this.count.set(res.count);
         this.loading.set(false);
       },
       error: () => {
-        this.error.set('Impossible de charger vos fichiers.');
+        this.error.set('Impossible de charger les fichiers.');
         this.loading.set(false);
       },
     });
@@ -83,7 +102,8 @@ export class MesFichiersComponent implements OnInit {
     });
   }
 
-  askDelete(f: Fichier): void { this.pendingDelete.set(f.id); }
+  // ── Suppression ─────────────────────────────────────────────────────────
+  askDelete(f: Fichier): void { this.pendingDelete.set(f.id); this.sharing.set(null); }
   cancelDelete(): void { this.pendingDelete.set(null); }
   isPendingDelete(id: number): boolean { return this.pendingDelete() === id; }
 
@@ -93,7 +113,6 @@ export class MesFichiersComponent implements OnInit {
     this.fichierService.deleteFichier(f.id).subscribe({
       next: () => {
         this.flash(`« ${f.nom} » supprimé.`);
-        // Reculer d'une page si on vient de vider la dernière.
         if (this.fichiers().length === 1 && this.page() > 1) this.page.set(this.page() - 1);
         this.load();
       },
@@ -101,6 +120,34 @@ export class MesFichiersComponent implements OnInit {
     });
   }
 
+  // ── Partage ─────────────────────────────────────────────────────────────
+  isSharing(id: number): boolean { return this.sharing() === id; }
+  openShare(f: Fichier): void { this.sharing.set(f.id); this.shareEmail.set(''); this.pendingDelete.set(null); }
+  closeShare(): void { this.sharing.set(null); this.shareEmail.set(''); }
+
+  addShare(f: Fichier): void {
+    const email = this.shareEmail().trim();
+    if (!email || !email.includes('@')) { this.error.set('Adresse email invalide.'); return; }
+    this.error.set('');
+    this.fichierService.partager(f.id, email).subscribe({
+      next: (updated) => { this.replaceFile(updated); this.shareEmail.set(''); this.flash(`Partagé avec ${email}.`); },
+      error: () => this.error.set('Partage impossible.'),
+    });
+  }
+
+  removeShare(f: Fichier, email: string): void {
+    this.error.set('');
+    this.fichierService.retirerPartage(f.id, email).subscribe({
+      next: (updated) => { this.replaceFile(updated); this.flash(`Partage retiré (${email}).`); },
+      error: () => this.error.set('Retrait du partage impossible.'),
+    });
+  }
+
+  private replaceFile(f: Fichier): void {
+    this.fichiers.update((list) => list.map((x) => (x.id === f.id ? f : x)));
+  }
+
+  // ── Formatage ────────────────────────────────────────────────────────────
   formatSize(mo: number | string): string {
     const v = Number(mo);
     if (!Number.isFinite(v)) return '—';

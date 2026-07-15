@@ -13,6 +13,8 @@ export interface Fichier {
   date_upload: string;
   fichier_type_mime: string;
   proprietaire: string;
+  /** Destinataires du partage — renseigné pour le propriétaire uniquement. */
+  partages: string[];
 }
 
 export interface PaginatedResponse<T> {
@@ -56,5 +58,22 @@ export class FichierService {
   /** Supprime un de mes fichiers. */
   deleteFichier(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/api/fichiers/${id}/`);
+  }
+
+  /** Fichiers que d'autres ont partagés avec moi. */
+  getPartagesAvecMoi(params: { page?: number } = {}): Observable<PaginatedResponse<Fichier>> {
+    let httpParams = new HttpParams();
+    if (params.page) httpParams = httpParams.set('page', params.page);
+    return this.http.get<PaginatedResponse<Fichier>>(`${this.base}/api/fichiers/partages/`, { params: httpParams });
+  }
+
+  /** Partage un de mes fichiers avec un email. */
+  partager(id: number, email: string): Observable<Fichier> {
+    return this.http.post<Fichier>(`${this.base}/api/fichiers/${id}/partages/`, { email });
+  }
+
+  /** Retire un partage d'un de mes fichiers. */
+  retirerPartage(id: number, email: string): Observable<Fichier> {
+    return this.http.delete<Fichier>(`${this.base}/api/fichiers/${id}/partages/`, { body: { email } });
   }
 }
