@@ -1,29 +1,127 @@
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ─── Foyer — polices (self-hosted, jamais de CDN) ──────────────────────── */
+@font-face { font-family: "Foyer UI"; font-weight: 400; font-style: normal; font-display: swap;
+  src: url("/assets/fonts/inter-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Foyer UI"; font-weight: 600; font-style: normal; font-display: swap;
+  src: url("/assets/fonts/inter-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Foyer UI"; font-weight: 800; font-style: normal; font-display: swap;
+  src: url("/assets/fonts/inter-latin-800-normal.woff2") format("woff2"); }
+@font-face { font-family: "Foyer Mono"; font-weight: 400; font-style: normal; font-display: swap;
+  src: url("/assets/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Foyer Mono"; font-weight: 600; font-style: normal; font-display: swap;
+  src: url("/assets/fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2"); }
 
+/* ─── Foyer — tokens ─────────────────────────────────────────────────────── */
 :root {
-  --primary:      #3b82f6;
-  --primary-dark: #1d4ed8;
-  --success:      #22c55e;
-  --warning:      #f59e0b;
-  --danger:       #ef4444;
-  --bg:           #f8fafc;
-  --surface:      #ffffff;
-  --border:       #e2e8f0;
-  --text:         #1e293b;
-  --text-muted:   #64748b;
-  --radius:       8px;
-  --shadow:       0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+  --accent: #2a6df4; --accent-deep: #1b4fc4; --accent-tint: #e8effe;
+  --success: #1fa463; --success-tint: #e4f6ec;
+  --warning: #d98e1e; --warning-tint: #fbf0dc;
+  --danger:  #e14b4b; --danger-tint:  #fbe6e6;
+
+  --bg: #f6f7fb; --card: #ffffff; --border: #e2e5ee;
+  --text: #12141c; --text-mute: #5b6172;
+  --accent-on: #ffffff;
+
+  --font-ui: "Foyer UI", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Foyer Mono", ui-monospace, "SF Mono", monospace;
+
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+
+  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 18px; --radius-full: 999px;
+
+  --text-xs: 12px; --text-sm: 14px; --text-base: 16px;
+  --text-lg: 20px; --text-xl: 24px; --text-2xl: 32px; --text-3xl: 40px;
+
+  --nav-h: 64px;
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 76px;
+  color-scheme: light;
+
+  /* Alias — vocabulaire déjà utilisé dans toutes les pages de cette app
+     (var(--primary), var(--surface), .btn, .badge, .card…). On ne renomme
+     rien dans les composants : on fait pointer les anciens noms vers les
+     tokens Foyer, pour que le thème clair/sombre s'applique partout sans
+     reprise page par page. */
+  --primary: var(--accent);
+  --primary-dark: var(--accent-deep);
+  --surface: var(--card);
+  --text-muted: var(--text-mute);
+  --radius: var(--radius-sm);
+  --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #5b8dff; --accent-deep: #7fa4ff; --accent-tint: #182749;
+    --success: #34c07f; --success-tint: #123625;
+    --warning: #eba53a; --warning-tint: #3a2c10;
+    --danger:  #ef6a6a; --danger-tint:  #3a1717;
+    --bg: #0c0e14; --card: #14171f; --border: #262b38;
+    --text: #eef0f5; --text-mute: #98a0b3; --accent-on: #0c0e14;
+    color-scheme: dark;
+  }
+}
+
+/* Interrupteur manuel — force un thème quel que soit prefers-color-scheme,
+   dans les deux sens. Posé par ThemeService avant le premier rendu (voir index.html). */
+:root[data-theme="dark"] {
+  --accent: #5b8dff; --accent-deep: #7fa4ff; --accent-tint: #182749;
+  --success: #34c07f; --success-tint: #123625;
+  --warning: #eba53a; --warning-tint: #3a2c10;
+  --danger:  #ef6a6a; --danger-tint:  #3a1717;
+  --bg: #0c0e14; --card: #14171f; --border: #262b38;
+  --text: #eef0f5; --text-mute: #98a0b3; --accent-on: #0c0e14;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --accent: #2a6df4; --accent-deep: #1b4fc4; --accent-tint: #e8effe;
+  --success: #1fa463; --success-tint: #e4f6ec;
+  --warning: #d98e1e; --warning-tint: #fbf0dc;
+  --danger:  #e14b4b; --danger-tint:  #fbe6e6;
+  --bg: #f6f7fb; --card: #ffffff; --border: #e2e5ee;
+  --text: #12141c; --text-mute: #5b6172;
+  --accent-on: #ffffff;
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-ui);
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
+  transition: background-color 0.15s, color 0.15s;
 }
+
+h1, h2, h3 { font-family: var(--font-ui); font-weight: 800; color: var(--text); line-height: 1.25; }
 
 a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
+
+code, pre, .mono { font-family: var(--font-mono); }
+
+/* ─── Accessibilité ──────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
 .page { padding: 24px; max-width: 1200px; margin: 0 auto; }
 
@@ -39,20 +137,22 @@ a:hover { text-decoration: underline; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 44px;
   padding: 8px 16px;
   border-radius: var(--radius);
   border: none;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 500;
+  font-family: var(--font-ui);
+  font-weight: 600;
   transition: background .15s;
   user-select: none;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  &.btn-primary  { background: var(--primary); color: #fff; }
+  &.btn-primary  { background: var(--primary); color: var(--accent-on); }
   &.btn-primary:hover { background: var(--primary-dark); }
-  &.btn-success  { background: var(--success); color: #fff; }
-  &.btn-danger   { background: var(--danger);  color: #fff; }
+  &.btn-success  { background: var(--success); color: var(--accent-on); }
+  &.btn-danger   { background: var(--danger);  color: var(--accent-on); }
   &.btn-ghost    { background: transparent; border: 1px solid var(--border); color: var(--text); }
   &.btn-ghost:hover { background: var(--bg); }
   &:disabled     { opacity: .5; cursor: not-allowed; }
@@ -61,22 +161,31 @@ a:hover { text-decoration: underline; }
 .badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-full);
   font-size: 12px;
-  font-weight: 500;
-  &.badge-blue   { background: #dbeafe; color: #1d4ed8; }
-  &.badge-green  { background: #dcfce7; color: #15803d; }
-  &.badge-yellow { background: #fef9c3; color: #854d0e; }
-  &.badge-gray   { background: #f1f5f9; color: #475569; }
-  &.badge-red    { background: #fee2e2; color: #b91c1c; }
+  font-weight: 600;
+  &.badge-blue   { background: var(--accent-tint);  color: var(--accent-deep); }
+  &.badge-green  { background: var(--success-tint); color: var(--success); }
+  &.badge-yellow { background: var(--warning-tint); color: var(--warning); }
+  &.badge-gray   { background: var(--bg); color: var(--text-muted); }
+  &.badge-red    { background: var(--danger-tint);  color: var(--danger); }
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+
+  /* Rend toute table scrollable horizontalement plutôt que de déborder de sa carte
+     ou de forcer un scroll de page entière — indispensable sur mobile où les tables
+     larges (nombreuses colonnes) dépassent systématiquement la largeur de l'écran. */
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+
   th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
-  th     { font-weight: 600; background: var(--bg); color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  th     { font-weight: 700; background: var(--bg); color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
   tr:hover td { background: var(--bg); }
 }
 
@@ -85,12 +194,16 @@ table {
   flex-direction: column;
   gap: 4px;
   margin-bottom: 16px;
-  label { font-size: 14px; font-weight: 500; }
+  label { font-size: 14px; font-weight: 600; }
   input, select, textarea {
+    min-height: 44px;
     padding: 8px 12px;
+    background: var(--card);
+    color: var(--text);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     font-size: 14px;
+    font-family: var(--font-ui);
     outline: none;
     transition: border-color .15s;
     &:focus { border-color: var(--primary); }

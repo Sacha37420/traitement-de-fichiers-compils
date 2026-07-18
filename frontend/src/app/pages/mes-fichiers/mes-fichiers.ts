@@ -5,7 +5,6 @@ import { FichierService, Fichier } from '../../core/fichier.service';
 import { WorkFileStore } from '../../core/workfile-store.service';
 import { KeycloakService } from '../../core/keycloak.service';
 import { workFileFromBlob } from '../../core/work-file.model';
-import { NavbarComponent } from '../../shared/navbar/navbar';
 
 type Mode = 'mine' | 'shared';
 
@@ -17,7 +16,7 @@ type Mode = 'mine' | 'shared';
 @Component({
   selector: 'app-mes-fichiers',
   standalone: true,
-  imports: [NavbarComponent, RouterLink, FormsModule],
+  imports: [RouterLink, FormsModule],
   templateUrl: './mes-fichiers.html',
   styleUrl: './mes-fichiers.scss',
 })
