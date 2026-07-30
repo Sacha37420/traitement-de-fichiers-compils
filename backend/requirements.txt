@@ -6,3 +6,6 @@ django-cors-headers>=4.3
 drf-spectacular[sidecar]>=0.26
 PyJWT>=2.8
 cryptography>=42.0
+# Appels à l'API de l'app storage (dépôt/lecture des fichiers) et au token
+# endpoint Keycloak du compte de service — cf. api/storage_client.py.
+requests>=2.31

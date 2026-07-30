@@ -154,3 +154,21 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600
 
 # Limite de poids par fichier envoyé au backend (défaut : 25 Mo).
 MAX_FICHIER_OCTETS = config('MAX_FICHIER_OCTETS', default=26214400, cast=int)
+
+# ── Stockage des fichiers (délégué à l'app storage) ───────────────────────────
+# Les octets ne sont plus dans devdb (ancien Fichier.fichier_binaire, un
+# BinaryField — voir CLAUDE.md racine, section « Fichiers rasters / médias ») :
+# ils vivent dans un unique partage de l'app storage, écrit et lu par le compte
+# de service 'traitement-de-fichiers-compils-admin'. Le cloisonnement entre
+# utilisateurs reste porté par api/views.py (_owned / _accessible) — storage ne
+# connaît ni Fichier.proprietaire ni Partage. Cf. api/storage_client.py.
+STORAGE_INTERNAL_URL = config('STORAGE_INTERNAL_URL', default='http://storage-backend:8000')
+STORAGE_NAMESPACE = config('STORAGE_NAMESPACE', default='traitement-de-fichiers-compils')
+# Compte de service (client_credentials) — client compagnon confidentiel créé
+# par create-app-client.sh, déclenché par la présence de
+# .keycloak-service-account-roles (fichier sans aucun rôle : cette app
+# n'administre pas Keycloak, elle n'utilise ce client que pour storage).
+KEYCLOAK_ADMIN_CLIENT_ID = config(
+    'KEYCLOAK_ADMIN_CLIENT_ID', default='traitement-de-fichiers-compils-admin',
+)
+KEYCLOAK_ADMIN_CLIENT_SECRET = config('KEYCLOAK_ADMIN_CLIENT_SECRET', default='')
