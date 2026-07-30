@@ -239,7 +239,7 @@ export class FileWorkbenchComponent {
       next: (res) => {
         if (!res.results.length) { this.flash('Aucun fichier côté serveur.'); return; }
         res.results.forEach((meta) => {
-          this.fichierService.downloadBlob(meta.id).subscribe({
+          this.fichierService.downloadBlob(meta).subscribe({
             next: (blob) => {
               const mime = meta.fichier_type_mime || blob.type || 'application/octet-stream';
               this.store.addFiles([

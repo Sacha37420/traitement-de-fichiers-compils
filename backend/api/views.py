@@ -2,7 +2,7 @@ import re
 from uuid import uuid4
 
 from django.conf import settings
-from django.http import Http404, StreamingHttpResponse
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
@@ -92,14 +92,36 @@ class FichiersView(APIView):
 
         nom = request.data.get('nom') or fichier_file.name
         taille = fichier_file.size
+        safe_name = _safe_name(nom)
+        # Un Share storage PAR fichier (pas un global) : c'est ce qui permettra
+        # au propriétaire de le lire en direct (cf. FichierSerializer) sans
+        # donner accès à ses autres fichiers — voir api/storage_client.py pour
+        # le raisonnement complet. Le nom est unique et n'a pas besoin d'exister
+        # au préalable : storage le crée au premier upload (write_prefix).
+        namespace = f'{settings.STORAGE_NAMESPACE_PREFIX}{uuid4().hex}'
         # Les octets partent vers storage AVANT la création de la ligne : une
         # ligne sans fichier serait un fichier fantôme dans la liste de
         # l'utilisateur, alors qu'un blob sans ligne n'est qu'un orphelin
-        # invisible (repérable par son chemin, et rien ne le sert).
-        relative_path = f'fichiers/{uuid4().hex}-{_safe_name(nom)}'
+        # invisible (repérable par son namespace, et rien ne le sert).
         try:
-            result = storage_client.upload(relative_path, fichier_file, _safe_name(nom), mime)
+            result = storage_client.upload_to(namespace, safe_name, fichier_file, safe_name, mime)
         except storage_client.StorageClientError as exc:
+            return Response({'error': f'Stockage indisponible : {exc}'},
+                            status=status.HTTP_502_BAD_GATEWAY)
+
+        # Le propriétaire doit lui-même être ShareMember : le Share vient d'être
+        # créé avec pour owner_username le COMPTE DE SERVICE (auto-création
+        # storage via write_prefix), pas l'utilisateur humain — sans cette
+        # ligne, même le propriétaire ne pourrait pas lire son fichier en direct.
+        try:
+            storage_client.add_member(namespace, request.user.email, role='read')
+        except storage_client.StorageClientError as exc:
+            # Le blob existe mais personne ne pourrait le lire en direct : on
+            # annule plutôt que de laisser un fichier fantôme inaccessible.
+            try:
+                storage_client.delete_share(namespace)
+            except storage_client.StorageClientError:
+                pass
             return Response({'error': f'Stockage indisponible : {exc}'},
                             status=status.HTTP_502_BAD_GATEWAY)
 
@@ -108,6 +130,7 @@ class FichiersView(APIView):
             type=type_,
             taille_fichier=round(taille / (1024 * 1024), 3),
             fichier_path=result['relative_path'],
+            storage_namespace=namespace,
             fichier_type_mime=mime,
             proprietaire=request.user.email,
         )
@@ -144,49 +167,32 @@ class FichierDetailView(APIView):
 
     def delete(self, request, pk):
         fichier = _owned(request, pk)
-        fichier_path = fichier.fichier_path
+        namespace = fichier.storage_namespace
         fichier.delete()
         # Purge après coup : si storage refusait la suppression, mieux vaut un
-        # blob orphelin qu'une ligne conservée alors que l'utilisateur a demandé
-        # la suppression (et que les partages ont déjà disparu en cascade).
-        if fichier_path:
+        # Share orphelin (inaccessible depuis l'app, ses ShareMember ne sont
+        # plus jamais mis à jour) qu'une ligne conservée alors que l'utilisateur
+        # a demandé la suppression (et que les partages ont déjà disparu en
+        # cascade). Le Share étant dédié à ce seul fichier, le supprimer en
+        # entier (plutôt qu'un simple delete de contenu) purge aussi ses
+        # ShareMember d'un coup — rien à faire membre par membre.
+        if namespace:
             try:
-                storage_client.delete(fichier_path)
+                storage_client.delete_share(namespace)
             except storage_client.StorageClientError:
                 pass
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class FichierDownloadView(APIView):
-    """GET : octets du fichier (propriétaire ou destinataire).
-
-    Proxie storage plutôt que de servir depuis la base. Le cloisonnement reste
-    ici : _accessible() décide, storage ne connaît ni propriétaire ni partage
-    (cf. api/storage_client.py).
-    """
-
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, pk):
-        fichier = _accessible(request, pk)
-        if not fichier.fichier_path:
-            raise Http404
-        try:
-            upstream = storage_client.download(fichier.fichier_path)
-        except storage_client.StorageClientError as exc:
-            return Response({'error': f'Stockage indisponible : {exc}'},
-                            status=status.HTTP_502_BAD_GATEWAY)
-        response = StreamingHttpResponse(
-            upstream.iter_content(chunk_size=65536),
-            content_type=fichier.fichier_type_mime or 'application/octet-stream',
-        )
-        # Le nom d'origine (Fichier.nom), pas le nom assaini du chemin storage.
-        response['Content-Disposition'] = f'attachment; filename="{fichier.nom}"'
-        return response
-
-
 class FichierPartagesView(APIView):
-    """POST : partager mon fichier avec un email. DELETE : retirer un partage."""
+    """POST : partager mon fichier avec un email. DELETE : retirer un partage.
+
+    Chaque changement est répliqué en ShareMember côté storage — c'est ce qui
+    rend l'accès direct navigateur → storage (FichierSerializer.fichier_url)
+    sûr pour un destinataire : storage refait le contrôle d'accès lui-même à
+    chaque requête, il ne fait confiance à ce backend qu'au moment où celui-ci
+    modifie la liste des membres.
+    """
 
     permission_classes = [IsAuthenticated]
 
@@ -197,11 +203,35 @@ class FichierPartagesView(APIView):
             return Response({'error': 'Adresse email invalide.'}, status=400)
         if email == (request.user.email or '').lower():
             return Response({'error': 'Vous êtes déjà propriétaire de ce fichier.'}, status=400)
+        if not fichier.storage_namespace:
+            return Response({'error': 'Ce fichier ne peut pas être partagé (stockage incomplet).'},
+                            status=status.HTTP_409_CONFLICT)
+        # Storage AVANT la ligne Partage : un ShareMember sans Partage ne donne
+        # rien de plus que ce que l'app a déjà décidé d'accorder (juste un léger
+        # retard d'enregistrement si la requête est rejouée) ; l'inverse — une
+        # ligne Partage sans ShareMember — ferait croire au propriétaire que le
+        # partage fonctionne alors que le destinataire n'aurait aucun accès direct.
+        try:
+            storage_client.add_member(fichier.storage_namespace, email, role='read')
+        except storage_client.StorageClientError as exc:
+            return Response({'error': f'Stockage indisponible : {exc}'},
+                            status=status.HTTP_502_BAD_GATEWAY)
         Partage.objects.get_or_create(fichier=fichier, destinataire=email)
         return Response(FichierSerializer(fichier, context={'request': request}).data, status=201)
 
     def delete(self, request, pk):
         fichier = _owned(request, pk)
         email = (request.data.get('email') or request.query_params.get('email') or '').strip().lower()
+        # Storage AVANT la ligne Partage, dans l'autre sens qu'à la création :
+        # tant que le ShareMember existe, l'accès direct reste ouvert — retirer
+        # la ligne Partage en premier ferait croire au propriétaire que l'accès
+        # est coupé alors qu'il resterait actif si le retrait côté storage échouait
+        # ensuite. En cas d'échec ici, la ligne Partage est délibérément conservée.
+        if fichier.storage_namespace and email:
+            try:
+                storage_client.remove_member(fichier.storage_namespace, email)
+            except storage_client.StorageClientError as exc:
+                return Response({'error': f'Stockage indisponible : {exc}'},
+                                status=status.HTTP_502_BAD_GATEWAY)
         Partage.objects.filter(fichier=fichier, destinataire=email).delete()
         return Response(FichierSerializer(fichier, context={'request': request}).data)

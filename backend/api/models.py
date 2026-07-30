@@ -11,6 +11,12 @@ class Fichier(models.Model):
     d'entrée unique du lab pour les fichiers utilisateur (cf.
     api/storage_client.py). Cette table ne porte plus que les métadonnées et
     l'autorisation (proprietaire + Partage), que storage ne connaît pas.
+
+    Depuis la synchronisation du modèle de partage (voir storage_namespace
+    ci-dessous), storage connaît en plus une réplique de cette autorisation
+    sous forme de ShareMember — c'est elle qui sécurise l'accès direct
+    frontend → storage (le backend ne proxie plus la lecture, cf.
+    FichierSerializer.get_fichier_url).
     """
 
     TYPE_CHOICES = [
@@ -24,10 +30,16 @@ class Fichier(models.Model):
     type = models.CharField(max_length=10, choices=TYPE_CHOICES)
     taille_fichier = models.DecimalField(max_digits=12, decimal_places=3)  # Mo
     date_upload = models.DateTimeField(auto_now_add=True)
-    # Chemin logique dans le partage storage de l'app (jamais un chemin sur
-    # disque) — le fichier lui-même n'est accessible qu'en passant par
-    # FichierDownloadView, qui réapplique _accessible().
+    # Chemin logique DANS le partage storage désigné par storage_namespace
+    # (jamais un chemin sur disque).
     fichier_path = models.CharField(max_length=1024, blank=True, default='')
+    # Nom du Share storage propre à CE fichier ('tdfc-<uuid hex>' — un Share par
+    # fichier, pas un Share global pour toute l'app : le propriétaire et chaque
+    # destinataire de Partage ont un ShareMember dessus, ce qui permet un accès
+    # direct navigateur → storage sans repasser par ce backend en lecture. Voir
+    # api/storage_client.py pour le choix du préfixe 'tdfc-' plutôt que le nom
+    # complet de l'app (budget de 64 caractères du slug storage).
+    storage_namespace = models.CharField(max_length=64, blank=True, default='')
     fichier_type_mime = models.CharField(max_length=100)
     proprietaire = models.CharField(max_length=255, db_index=True, default='')
 

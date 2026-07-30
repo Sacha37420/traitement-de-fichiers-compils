@@ -8,8 +8,9 @@ urlpatterns = [
     path('fichiers/partages/', views.PartagesAvecMoiView.as_view()),
     # Ressource : détail (GET, propriétaire ou destinataire) / suppression (DELETE, propriétaire)
     path('fichiers/<int:pk>/', views.FichierDetailView.as_view()),
-    # Binaire (propriétaire ou destinataire)
-    path('fichiers/<int:pk>/download/', views.FichierDownloadView.as_view()),
+    # Pas de route de téléchargement ici : FichierSerializer.fichier_url pointe
+    # désormais directement vers storage (accès direct navigateur → storage,
+    # sécurisé par les ShareMember synchronisés dans FichierPartagesView).
     # Partages d'un fichier : ajouter (POST) / retirer (DELETE) — propriétaire uniquement
     path('fichiers/<int:pk>/partages/', views.FichierPartagesView.as_view()),
 ]

@@ -163,7 +163,30 @@ MAX_FICHIER_OCTETS = config('MAX_FICHIER_OCTETS', default=26214400, cast=int)
 # utilisateurs reste porté par api/views.py (_owned / _accessible) — storage ne
 # connaît ni Fichier.proprietaire ni Partage. Cf. api/storage_client.py.
 STORAGE_INTERNAL_URL = config('STORAGE_INTERNAL_URL', default='http://storage-backend:8000')
+# Ancien partage global unique — plus utilisé pour l'upload (voir
+# STORAGE_NAMESPACE_PREFIX ci-dessous, un Share par Fichier désormais), gardé
+# pour la marche arrière de la migration 0004_fichier_storage uniquement.
 STORAGE_NAMESPACE = config('STORAGE_NAMESPACE', default='traitement-de-fichiers-compils')
+# Préfixe des Share storage créés un par Fichier (cf. api/storage_client.py
+# pour le choix de cette abréviation plutôt que le nom complet de l'app, et
+# api/views.py pour la création). Doit correspondre au write_prefix du compte
+# de service côté storage (KEYCLOAK_SERVICE_WRITE_PREFIXES=
+# traitement-de-fichiers-compils-admin:tdfc-, storage/.env).
+STORAGE_NAMESPACE_PREFIX = config('STORAGE_NAMESPACE_PREFIX', default='tdfc-')
+# URL PUBLIQUE (côté navigateur) de l'API storage, pour l'accès direct
+# frontend → storage (FichierSerializer.get_fichier_url) — distincte de
+# STORAGE_INTERNAL_URL (résolution DNS interne au réseau Docker, inatteignable
+# depuis le navigateur de l'utilisateur). Même origine que cette app derrière
+# Caddy (chemin /storage-api, cf. storage/docker-compose.yml) ⇒ pas de CORS à
+# gérer en déploiement normal (DOMAIN renseigné). Sans DOMAIN (dev local sans
+# Caddy), retombe sur le port propre du backend storage (8093, cf.
+# dev/CLAUDE.md tableau des sous-modules) — CORS doit alors autoriser cette
+# origine côté storage, hors du périmètre de cette app.
+DOMAIN = config('DOMAIN', default='CHANGE_ME')
+if DOMAIN and DOMAIN != 'CHANGE_ME':
+    STORAGE_PUBLIC_BASE_URL = f'https://{DOMAIN}/storage-api'
+else:
+    STORAGE_PUBLIC_BASE_URL = config('STORAGE_PUBLIC_BASE_URL', default='http://localhost:8093')
 # Compte de service (client_credentials) — client compagnon confidentiel créé
 # par create-app-client.sh, déclenché par la présence de
 # .keycloak-service-account-roles (fichier sans aucun rôle : cette app

@@ -84,14 +84,14 @@ export class MesFichiersComponent implements OnInit {
   login(): void { this.kc.login(); }
 
   download(f: Fichier): void {
-    this.fichierService.downloadBlob(f.id).subscribe({
+    this.fichierService.downloadBlob(f).subscribe({
       next: (blob) => saveBlob(blob, f.nom),
       error: () => this.error.set(`Téléchargement de « ${f.nom} » impossible.`),
     });
   }
 
   openInAtelier(f: Fichier): void {
-    this.fichierService.downloadBlob(f.id).subscribe({
+    this.fichierService.downloadBlob(f).subscribe({
       next: (blob) => {
         const mime = f.fichier_type_mime || blob.type || 'application/octet-stream';
         this.store.addFiles([workFileFromBlob(blob, f.nom, mime, { origin: 'backend', backendId: f.id })]);

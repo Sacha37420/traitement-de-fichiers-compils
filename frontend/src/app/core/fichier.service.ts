@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, throwError } from 'rxjs';
 
 interface EnvWindow { __env?: { apiUrl?: string } }
 
@@ -15,6 +15,14 @@ export interface Fichier {
   proprietaire: string;
   /** Destinataires du partage — renseigné pour le propriétaire uniquement. */
   partages: string[];
+  /**
+   * URL storage complète (accès direct, cf. FichierService.downloadBlob) —
+   * null si le fichier n'a pas (ou plus) de stockage associé. Sécurisée par un
+   * ShareMember storage propre à ce fichier, synchronisé par ce backend à
+   * chaque partage/révocation (cf. api/views.py côté backend) : pas besoin de
+   * repasser par ce backend pour la lire, storage refait le contrôle d'accès.
+   */
+  fichier_url: string | null;
 }
 
 export interface PaginatedResponse<T> {
@@ -50,9 +58,19 @@ export class FichierService {
     return this.http.post<Fichier>(`${this.base}/api/fichiers/`, formData);
   }
 
-  /** Récupère le binaire d'un de mes fichiers. */
-  downloadBlob(id: number): Observable<Blob> {
-    return this.http.get(`${this.base}/api/fichiers/${id}/download/`, { responseType: 'blob' });
+  /**
+   * Récupère le binaire d'un fichier accessible (propriétaire ou
+   * destinataire) — appel DIRECT à storage, pas à ce backend : authInterceptor
+   * pose le même token Authorization qu'à toute requête HttpClient (même
+   * origine sous Caddy, donc pas de CORS), et c'est storage qui vérifie
+   * l'accès via le ShareMember du fichier. Nécessite fichier.fichier_url
+   * (absent seulement pour un fichier sans stockage associé).
+   */
+  downloadBlob(fichier: Pick<Fichier, 'fichier_url'>): Observable<Blob> {
+    if (!fichier.fichier_url) {
+      return throwError(() => new Error('Ce fichier ne peut pas être téléchargé (stockage indisponible).'));
+    }
+    return this.http.get(fichier.fichier_url, { responseType: 'blob' });
   }
 
   /** Supprime un de mes fichiers. */
