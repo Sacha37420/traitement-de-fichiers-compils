@@ -48,6 +48,16 @@
   --text-muted: var(--text-mute);
   --radius: var(--radius-sm);
   --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+
+  /* Texte clair fixe pour poser sur un aplat sombre (badge sur vignette) —
+     ne s'inverse jamais avec le thème. */
+  --on-solid: #ffffff;
+  /* Fond « papier » d'une page PDF prévisualisée : reste blanc quel que soit
+     le thème, comme une vraie page imprimée. */
+  --paper: #ffffff;
+  /* Contour des poignées de recadrage d'image — doit rester lisible par-dessus
+     n'importe quelle image de l'utilisateur, indépendamment du thème. */
+  --overlay-handle: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -207,6 +217,7 @@ table {
     outline: none;
     transition: border-color .15s;
     &:focus { border-color: var(--primary); }
+    &:focus-visible { box-shadow: 0 0 0 3px var(--accent-tint); }
   }
   textarea { resize: vertical; min-height: 80px; }
 }
