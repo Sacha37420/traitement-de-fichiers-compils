@@ -135,6 +135,10 @@ code, pre, .mono { font-family: var(--font-mono); }
 
 .page { padding: 24px; max-width: 1200px; margin: 0 auto; }
 
+@media (max-width: 899px) {
+  .page { padding: 16px; }
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
