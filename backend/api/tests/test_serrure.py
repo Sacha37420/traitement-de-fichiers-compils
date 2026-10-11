@@ -105,13 +105,14 @@ class SerrureTests(SocleTestCase):
         c.credentials(HTTP_AUTHORIZATION=f"Bearer {jeton(kid='cle-inconnue')}")
         self.assertNotIn(c.get('/api/fichiers/').status_code, range(200, 400))
 
-    # DÉFAUT (I4) — api/authentication.py n'intercepte que InvalidTokenError ;
-    # PyJWKClient lève PyJWKClientError (clé `kid` absente du JWKS, ou Keycloak
-    # injoignable), qui n'en hérite pas : la requête finit en erreur 500 non
-    # gérée au lieu d'un refus 401/403. L'accès reste fermé (test ci-dessus),
-    # mais n'importe qui provoque des 500 à volonté avec un jeton forgé.
-    @unittest.expectedFailure
+    # Corrigé (était un 500) : PyJWKClientError est traduit en refus.
     def test_cle_inconnue_repond_un_refus_propre(self):
         c = APIClient(raise_request_exception=False)
         c.credentials(HTTP_AUTHORIZATION=f"Bearer {jeton(kid='cle-inconnue')}")
+        self.assertIn(c.get('/api/fichiers/').status_code, (401, 403))
+
+    def test_jwks_injoignable_repond_un_refus_propre(self):
+        self.jwks_fetch.side_effect = jwt.PyJWKClientError('Keycloak injoignable (simulé)')
+        c = APIClient(raise_request_exception=False)
+        c.credentials(HTTP_AUTHORIZATION=f'Bearer {jeton()}')
         self.assertIn(c.get('/api/fichiers/').status_code, (401, 403))
