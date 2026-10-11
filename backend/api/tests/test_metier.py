@@ -105,6 +105,17 @@ class DepotTests(SocleTestCase):
         self.assertEqual(self.deposer(self.alice, nom='x.pdf', nom_saisi='n' * 200).status_code, 201)
 
 
+    def test_un_type_de_contenu_trop_long_est_refuse_sans_laisser_d_orphelin(self):
+        # Même règle que pour le nom : la borne de la colonne (100) est
+        # vérifiée avant le dépôt des octets.
+        self.alice.raise_request_exception = False
+        resp = self.deposer(self.alice, mime='application/' + 'x' * 89)       # 101 caractères
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(self.reseau.journal, [])
+        self.assertFalse(Fichier.objects.exists())
+        self.assertEqual(self.deposer(self.alice, mime='application/' + 'x' * 88).status_code, 201)
+
+
 class PannesTests(SocleTestCase):
     """storage ou Keycloak en défaut : l'app répond 502 et ne ment pas sur l'état."""
 

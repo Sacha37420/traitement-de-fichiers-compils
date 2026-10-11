@@ -104,6 +104,8 @@ class FichiersView(APIView):
         # refusé après coup laisserait un Share orphelin dans storage.
         if len(nom) > Fichier._meta.get_field('nom').max_length:
             return Response({'error': 'Nom de fichier trop long (200 caractères au plus).'}, status=400)
+        if len(mime) > Fichier._meta.get_field('fichier_type_mime').max_length:
+            return Response({'error': 'Type de contenu invalide.'}, status=400)
         taille = fichier_file.size
         safe_name = _safe_name(nom)
         # Un Share storage PAR fichier (pas un global) : c'est ce qui permettra
