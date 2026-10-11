@@ -1,7 +1,6 @@
 """Règles métier : dépôt (limite de poids, type, nom, chemin dans storage),
 ordre des écritures entre storage et la base, et ce qui arrive quand storage
 ou Keycloak ne répond pas."""
-import unittest
 from decimal import Decimal
 
 from django.test import override_settings
@@ -95,16 +94,15 @@ class DepotTests(SocleTestCase):
         self.assertEqual(self.reseau.appels('POST')[0], ('POST', f'/api/files/{f.storage_namespace}/'))
         self.assertEqual(list(self.reseau.partages), [f.storage_namespace])
 
-    # DÉFAUT (I4) — `nom` (champ libre du formulaire) n'est pas borné avant
-    # l'écriture : au-delà des 200 caractères de Fichier.nom, les octets sont
-    # déjà dans storage et le propriétaire déjà membre quand l'INSERT échoue
-    # (DataError → 500). Il reste un Share orphelin que rien ne purgera.
-    @unittest.expectedFailure
+    # Corrigé : le nom était borné par la base seulement, APRÈS le dépôt des
+    # octets (DataError → 500, Share orphelin).
     def test_un_nom_trop_long_est_refuse_sans_laisser_d_orphelin(self):
         self.alice.raise_request_exception = False
         resp = self.deposer(self.alice, nom='x.pdf', nom_saisi='n' * 201)
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(self.reseau.partages, {})
+        self.assertEqual(self.reseau.journal, [])
+        self.assertEqual(self.deposer(self.alice, nom='x.pdf', nom_saisi='n' * 200).status_code, 201)
 
 
 class PannesTests(SocleTestCase):

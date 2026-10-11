@@ -6,7 +6,6 @@ L'autorisation est portée par les modèles de l'app — ``Fichier.proprietaire`
 par le compte de service : c'est elle qui ouvre la lecture directe des octets.
 Un refus se dit toujours 404 : l'existence d'un fichier d'autrui ne fuit pas.
 """
-import unittest
 
 from api.models import Fichier, Partage
 from .socle import JETON_SERVICE, SocleTestCase, client_de

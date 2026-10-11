@@ -5,7 +5,6 @@ téléchargement du JWKS est remplacé. Le lab est exposé sur Internet : chaque
 refus ci-dessous ferme un chemin d'entrée réel.
 """
 import time
-import unittest
 
 import jwt
 from rest_framework.test import APIClient
