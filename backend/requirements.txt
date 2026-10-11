@@ -9,3 +9,4 @@ cryptography>=42.0
 # Appels à l'API de l'app storage (dépôt/lecture des fichiers) et au token
 # endpoint Keycloak du compte de service — cf. api/storage_client.py.
 requests>=2.31
+gunicorn>=23.0,<24.0
