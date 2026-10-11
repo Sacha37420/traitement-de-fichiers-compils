@@ -55,6 +55,7 @@ ne pas changer leur signature. Les nouvelles fonctions à namespace explicite
 from __future__ import annotations
 
 import time
+from urllib.parse import quote
 
 import requests
 from django.conf import settings
@@ -264,7 +265,11 @@ def remove_member(namespace: str, email: str) -> None:
     membre) — c'est l'état final recherché, pas une erreur pour l'appelant."""
     try:
         resp = requests.delete(
-            _shares_url(f'{namespace}/members/{email}/'), headers=_headers(), timeout=_TIMEOUT,
+            # `email` vient de l'appelant : encodé en entier (safe=''), sinon un
+            # `/` ou un `..` changerait la ressource visée (requests normalise
+            # les segments `..` avant l'envoi).
+            _shares_url(f"{namespace}/members/{quote(email, safe='')}/"),
+            headers=_headers(), timeout=_TIMEOUT,
         )
     except requests.RequestException as exc:
         raise StorageClientError(f'storage injoignable : {exc}') from exc

@@ -41,6 +41,15 @@ def _safe_name(nom: str) -> str:
     return cleaned.strip('.') or 'fichier'
 
 
+_EMAIL_RE = re.compile(r'[^@\s/\\%]+@[^@\s/\\%]+')
+
+
+def _email_valide(email: str) -> bool:
+    """Forme d'adresse, sans rien qui puisse changer un chemin d'URL : cette
+    valeur devient un segment de l'URL de storage (storage_client.remove_member)."""
+    return bool(_EMAIL_RE.fullmatch(email)) and '..' not in email
+
+
 def _owned(request, pk) -> Fichier:
     """Le fichier s'il m'appartient, sinon 404."""
     return get_object_or_404(Fichier, pk=pk, proprietaire=request.user.email)
@@ -199,7 +208,7 @@ class FichierPartagesView(APIView):
     def post(self, request, pk):
         fichier = _owned(request, pk)
         email = (request.data.get('email') or '').strip().lower()
-        if not email or '@' not in email:
+        if not _email_valide(email):
             return Response({'error': 'Adresse email invalide.'}, status=400)
         if email == (request.user.email or '').lower():
             return Response({'error': 'Vous êtes déjà propriétaire de ce fichier.'}, status=400)
@@ -222,6 +231,8 @@ class FichierPartagesView(APIView):
     def delete(self, request, pk):
         fichier = _owned(request, pk)
         email = (request.data.get('email') or request.query_params.get('email') or '').strip().lower()
+        if not _email_valide(email):
+            return Response({'error': 'Adresse email invalide.'}, status=400)
         # Storage AVANT la ligne Partage, dans l'autre sens qu'à la création :
         # tant que le ShareMember existe, l'accès direct reste ouvert — retirer
         # la ligne Partage en premier ferait croire au propriétaire que l'accès

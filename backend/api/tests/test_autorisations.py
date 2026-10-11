@@ -165,24 +165,20 @@ class TraverseeDeCheminTests(SocleTestCase):
     def emis(self):
         return self.reseau.journal[self.avant:]
 
-    # DÉFAUT (I4) — FichierPartagesView.delete passe `email` sans validation à
-    # storage_client.remove_member, qui le colle dans le chemin
-    # `/api/shares/<ns>/members/<email>/`. `requests` normalise les segments
-    # `..` avant l'envoi : avec email=`../../<Share d'autrui>`, la requête émise
-    # par le COMPTE DE SERVICE (propriétaire de tous les Share `tdfc-`) devient
-    # `DELETE /api/shares/<Share d'autrui>/` — suppression des octets et des
-    # membres du fichier d'un autre utilisateur. Il suffit de posséder un
-    # fichier et de connaître le nom du Share visé (rendu à tout destinataire
-    # dans `fichier_url`) : un destinataire en lecture détruit ce qu'on lui a partagé.
-    @unittest.expectedFailure
+    # Corrigé : l'adresse était collée telle quelle dans le chemin
+    # `/api/shares/<ns>/members/<email>/` et `requests` normalise les `..` —
+    # `../../<Share d'autrui>` faisait émettre par le compte de service un
+    # `DELETE /api/shares/<Share d'autrui>/`. Désormais validée (400) et encodée.
     def test_retirer_un_partage_ne_peut_pas_supprimer_le_share_d_autrui(self):
         cible = self.victime.storage_namespace
-        self.bob.delete(f'/api/fichiers/{self.a_bob.pk}/partages/', {'email': f'../../{cible}'}, format='json')
+        for email in (f'../../{cible}', f'x@y/../../../{cible}', f'x@y%2F..%2F..%2F..%2F{cible}'):
+            resp = self.bob.delete(f'/api/fichiers/{self.a_bob.pk}/partages/', {'email': email}, format='json')
+            self.assertEqual(resp.status_code, 400, email)
+        self.assertEqual(self.emis(), [])                      # storage n'a rien reçu
         self.assertNotIn(('DELETE', f'/api/shares/{cible}/'), self.emis())
         self.assertIn(cible, self.reseau.partages)
 
-    # Même défaut, autre cible : retirer au propriétaire l'accès à son propre fichier.
-    @unittest.expectedFailure
+    # Même chemin, autre cible : retirer au propriétaire l'accès à son propre fichier.
     def test_retirer_un_partage_ne_peut_pas_evincer_un_membre_d_un_autre_share(self):
         cible = self.victime.storage_namespace
         self.bob.delete(f'/api/fichiers/{self.a_bob.pk}/partages/',
@@ -193,7 +189,17 @@ class TraverseeDeCheminTests(SocleTestCase):
         # À l'ajout, l'adresse voyage dans le CORPS de la requête, pas dans l'URL.
         cible = self.victime.storage_namespace
         resp = self.partager(self.bob, self.a_bob, f'x@y/../../{cible}/members/')
-        self.assertIn(resp.status_code, (201, 400))
+        self.assertEqual(resp.status_code, 400)
         for methode, chemin in self.emis():
             self.assertTrue(chemin.startswith(f'/api/shares/{self.a_bob.storage_namespace}/'), chemin)
         self.assertEqual(self.reseau.membres(cible), {'alice@exemple.org': 'read', 'bob@exemple.org': 'read'})
+
+    def test_le_client_storage_encode_l_adresse_meme_sans_validation_en_amont(self):
+        # Seconde barrière, indépendante de la vue : le segment est encodé en entier.
+        from api import storage_client
+        cible = self.victime.storage_namespace
+        storage_client.remove_member(self.a_bob.storage_namespace, f'../../{cible}')
+        self.assertIn(cible, self.reseau.partages)
+        self.assertEqual(self.reseau.membres(cible), {'alice@exemple.org': 'read', 'bob@exemple.org': 'read'})
+        self.assertEqual(self.reseau.appels('DELETE')[-1], (
+            'DELETE', f'/api/shares/{self.a_bob.storage_namespace}/members/..%2F..%2F{cible}/'))

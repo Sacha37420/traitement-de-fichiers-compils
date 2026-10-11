@@ -111,7 +111,7 @@ class FauxReseau:
         if self.coupe:
             raise requests.ConnectionError('réseau fermé (simulé)')
         url = urlsplit(request.url)
-        chemin = unquote(url.path)
+        chemin = url.path          # brut : un `%2F` reste un caractère du segment, comme côté serveur
         self.journal.append((request.method, chemin))
         corps = request.body or b''
         if isinstance(corps, str):
@@ -166,9 +166,10 @@ class FauxReseau:
             if 'remove_member' in self.pannes:
                 return _reponse(request, 500)
             share = self.partages.get(m.group(1))
-            if share is None or m.group(2) not in share['membres']:
+            membre = unquote(m.group(2))
+            if share is None or membre not in share['membres']:
                 return _reponse(request, 404)
-            del share['membres'][m.group(2)]
+            del share['membres'][membre]
             return _reponse(request, 204)
 
         m = re.fullmatch(r'/api/shares/([^/]+)/', chemin)
