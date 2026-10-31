@@ -1,4 +1,5 @@
 import { WorkFile } from '../work-file.model';
+import { OcrResponse } from '../mistral-ocr.util';
 
 /** Types de champ pour le formulaire de paramètres générique. */
 export type ParamType = 'number' | 'range' | 'text' | 'color' | 'select' | 'boolean';
@@ -45,14 +46,27 @@ export interface FileOperation {
   params?: OperationParamField[];
   /** Opération nécessitant une authentification (ops backend). */
   requiresAuth?: boolean;
-  /** Opération nécessitant une clé API externe (saisie une fois, stockée en localStorage). */
-  apiKey?: 'mistral';
+  /**
+   * Opération faite par le serveur de l'app (OCR Mistral, avec la clé du coffre
+   * de l'utilisateur) : demande une connexion et passe par `OperationContext.ocr`.
+   */
+  serverOcr?: boolean;
   /** Opère sur une sélection de fichiers (ex. fusion de PDF). */
   multi?: boolean;
   /** Exécution sur un fichier unique (ops non-multi). */
-  run?(file: WorkFile, params: Record<string, unknown>): Promise<OperationResult>;
+  run?(file: WorkFile, params: Record<string, unknown>, ctx?: OperationContext): Promise<OperationResult>;
   /** Exécution sur une sélection (ops multi). */
   runMulti?(files: WorkFile[], params: Record<string, unknown>): Promise<OperationResult>;
+}
+
+/**
+ * Services fournis par l'atelier à une opération qui en a besoin (passé en
+ * troisième argument de `run`, jamais dans `params` : `params` est recopié dans
+ * l'historique du fichier). Les opérations purement locales l'ignorent.
+ */
+export interface OperationContext {
+  /** OCR par le serveur (`POST /api/ocr/`). */
+  ocr?: (blob: Blob, mime: string, name: string) => Promise<OcrResponse>;
 }
 
 /** Valeurs par défaut d'une opération, prêtes à alimenter le formulaire. */

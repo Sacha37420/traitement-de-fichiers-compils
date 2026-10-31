@@ -1,31 +1,28 @@
 import { Injectable } from '@angular/core';
 import Keycloak from 'keycloak-js';
-
-interface EnvWindow {
-  __env?: {
-    keycloakUrl?:      string;
-    keycloakRealm?:    string;
-    keycloakClientId?: string;
-    appUrl?:           string;
-    apiUrl?:           string;
-  };
-}
+import { LabEnv, labEnv } from './env';
+import { loginRedirectUri } from './redirect-uri';
 
 @Injectable({ providedIn: 'root' })
 export class KeycloakService {
   private kc!: Keycloak;
+  private env: LabEnv = {};
 
   async init(): Promise<boolean> {
-    const env = (window as unknown as EnvWindow).__env ?? {};
+    const env = labEnv();
+    this.env = env;
     this.kc = new Keycloak({
       url:      env.keycloakUrl      ?? (window.location.protocol + '//' + window.location.hostname + ':8080'),
       realm:    env.keycloakRealm    ?? 'ssolab',
       clientId: env.keycloakClientId ?? 'traitement-de-fichiers-compils',
     });
+    // Page publique : `check-sso` (silencieux, par iframe) est gardé tel quel —
+    // aucun `redirectUri` ici, il ne sert qu'au bouton de connexion (`login()`).
     return this.kc.init({
       onLoad: 'check-sso',
       checkLoginIframe: false,
       silentCheckSsoRedirectUri: document.baseURI + 'assets/silent-check-sso.html',
+      pkceMethod: 'S256',
     });
   }
 
@@ -39,8 +36,9 @@ export class KeycloakService {
 
   get isAuthenticated(): boolean { return this.kc?.authenticated ?? false; }
 
+  /** Connexion, puis retour sur la page courante (si elle est sous l'app), sinon sur l'accueil. */
   login(): void {
-    this.kc.login();
+    this.kc.login({ redirectUri: loginRedirectUri(window.location.href, this.env.appUrl, window.location.origin) });
   }
 
   getToken(): string | undefined {

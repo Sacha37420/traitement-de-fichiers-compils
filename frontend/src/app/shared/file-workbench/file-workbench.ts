@@ -4,12 +4,13 @@ import { WorkFileStore } from '../../core/workfile-store.service';
 import { OperationRegistryService } from '../../core/operation-registry.service';
 import { KeycloakService } from '../../core/keycloak.service';
 import { FichierService } from '../../core/fichier.service';
+import { OcrService } from '../../core/ocr.service';
 import {
   WorkFile,
   kindToBackendType,
   workFileFromBlob,
 } from '../../core/work-file.model';
-import { FileOperation, defaultParams } from '../../core/operations/operation.model';
+import { FileOperation, OperationContext, defaultParams } from '../../core/operations/operation.model';
 import { Rect } from '../../core/image-canvas.util';
 import { ImageCropOverlayComponent } from './image-crop-overlay';
 import { PdfPageManagerComponent } from './pdf-page-manager';
@@ -36,6 +37,7 @@ export class FileWorkbenchComponent {
   private registry = inject(OperationRegistryService);
   private kc = inject(KeycloakService);
   private fichierService = inject(FichierService);
+  private ocrService = inject(OcrService);
 
   readonly accept = 'image/*,application/pdf,video/*';
 
@@ -55,16 +57,22 @@ export class FileWorkbenchComponent {
   pagesCtx = signal<OpCtx | null>(null);
   mergeCtx = signal<MergeCtx | null>(null);
 
-  // Clé API Mistral (OCR) — saisie une fois, persistée en localStorage.
-  private readonly MISTRAL_KEY_LS = 'mistral_api_key';
-  mistralKey = signal<string>(localStorage.getItem('mistral_api_key') ?? '');
+  // Clé API Mistral (OCR) — envoyée une fois au serveur, qui la garde chiffrée
+  // et ne la renvoie jamais : on ne sait d'elle que « enregistrée ou non ».
+  keyConfigured = signal(false);
   keyModal = signal<{ pending: OpCtx | null } | null>(null);
   keyInput = signal('');
+  keyError = signal('');
+  keySaving = signal(false);
 
   selectedFiles = computed(() => this.files().filter((f) => this.selected().has(f.id)));
   collectionOps = computed(() => this.registry.collectionOpsFor(this.selectedFiles()));
 
   constructor() {
+    // Ancienne clé gardée par le navigateur : effacée, jamais envoyée (la
+    // ressaisir une fois l'enregistre dans le coffre du serveur).
+    try { localStorage.removeItem('mistral_api_key'); } catch { /* stockage indisponible */ }
+    this.refreshKeyStatus();
     effect(() => {
       for (const f of this.files()) {
         if ((f.kind === 'pdf' || f.kind === 'video') && !this.requested.has(f.previewUrl)) {
@@ -98,11 +106,10 @@ export class FileWorkbenchComponent {
 
   launch(file: WorkFile, op: FileOperation): void {
     if (this.isOpDisabled(op) || this.busy()) return;
-    // Ops nécessitant une clé API : s'assurer de la clé avant d'exécuter.
-    if (op.apiKey === 'mistral') {
-      const key = this.mistralKey();
-      if (key) void this.runOp(file.id, op, { apiKey: key });
-      else this.keyModal.set({ pending: { file, op } });
+    // OCR par le serveur : connexion et clé enregistrée requises.
+    if (op.serverOcr) {
+      if (this.isAuthenticated && this.keyConfigured()) void this.runOp(file.id, op, {}, this.ocrCtx());
+      else this.openKeyModal({ file, op });
       return;
     }
     switch (op.ui) {
@@ -114,10 +121,12 @@ export class FileWorkbenchComponent {
   }
 
   /** Exécute une opération single-file avec remontée d'erreur à l'utilisateur. */
-  private async runOp(fileId: string, op: FileOperation, params: Record<string, unknown>): Promise<void> {
+  private async runOp(
+    fileId: string, op: FileOperation, params: Record<string, unknown>, ctx?: OperationContext,
+  ): Promise<void> {
     this.error.set('');
     try {
-      await this.store.applyOperation(fileId, op, params);
+      await this.store.applyOperation(fileId, op, params, ctx);
     } catch (e) {
       this.error.set(`« ${op.label} » a échoué : ${errMessage(e)}`);
     }
@@ -144,28 +153,65 @@ export class FileWorkbenchComponent {
     await this.runOp(c.file.id, c.op, { order });
   }
 
-  // ── Clé API Mistral ───────────────────────────────────────────────────────
-  openKeyModal(): void {
-    this.keyInput.set(this.mistralKey());
-    this.keyModal.set({ pending: null });
+  // ── Clé API Mistral (coffre du serveur) ──────────────────────────────────
+  private ocrCtx(): OperationContext {
+    return { ocr: (blob, mime, name) => this.ocrService.run(blob, mime, name) };
   }
 
-  async saveKey(): Promise<void> {
-    const key = this.keyInput().trim();
-    if (!key) return;
-    localStorage.setItem(this.MISTRAL_KEY_LS, key);
-    this.mistralKey.set(key);
-    const pending = this.keyModal()?.pending ?? null;
-    this.keyModal.set(null);
+  private refreshKeyStatus(): void {
+    if (!this.isAuthenticated) { this.keyConfigured.set(false); return; }
+    this.ocrService.keyStatus().subscribe({
+      next: (r) => this.keyConfigured.set(!!r.mistral_key_configured),
+      error: () => this.keyConfigured.set(false),
+    });
+  }
+
+  openKeyModal(pending: OpCtx | null = null): void {
     this.keyInput.set('');
-    if (pending) await this.runOp(pending.file.id, pending.op, { apiKey: key });
+    this.keyError.set('');
+    this.keyModal.set({ pending });
+  }
+
+  login(): void { this.kc.login(); }
+
+  saveKey(): void {
+    const key = this.keyInput().trim();
+    if (!key || !this.isAuthenticated || this.keySaving()) return;
+    this.keySaving.set(true);
+    this.keyError.set('');
+    this.ocrService.setKey(key).subscribe({
+      next: () => {
+        this.keySaving.set(false);
+        this.keyInput.set('');
+        this.keyConfigured.set(true);
+        const pending = this.keyModal()?.pending ?? null;
+        this.keyModal.set(null);
+        if (pending) void this.runOp(pending.file.id, pending.op, {}, this.ocrCtx());
+      },
+      error: () => {
+        this.keySaving.set(false);
+        this.keyInput.set('');
+        this.keyError.set('La clé n\'a pas pu être enregistrée (format refusé ou serveur injoignable).');
+      },
+    });
   }
 
   clearKey(): void {
-    localStorage.removeItem(this.MISTRAL_KEY_LS);
-    this.mistralKey.set('');
-    this.keyInput.set('');
-    this.keyModal.set(null);
+    if (!this.isAuthenticated || this.keySaving()) return;
+    this.keySaving.set(true);
+    this.keyError.set('');
+    this.ocrService.setKey('').subscribe({
+      next: () => {
+        this.keySaving.set(false);
+        this.keyConfigured.set(false);
+        this.keyInput.set('');
+        this.keyModal.set(null);
+      },
+      error: () => {
+        this.keySaving.set(false);
+        this.keyError.set('La clé n\'a pas pu être retirée. Réessayez.');
+      },
+    });
   }
 
   // ── Opérations de collection (fusion) ────────────────────────────────────

@@ -1,8 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
-
-interface EnvWindow { __env?: { apiUrl?: string } }
+import { apiUrl } from './env';
 
 /** Fichier tel que renvoyé par le backend (stockage propriétaire, sans traitement). */
 export interface Fichier {
@@ -42,7 +41,7 @@ export class FichierService {
   private http = inject(HttpClient);
 
   private get base(): string {
-    return (window as unknown as EnvWindow).__env?.apiUrl ?? 'http://localhost:8089';
+    return apiUrl();
   }
 
   /** Liste mes fichiers stockés sur le serveur. */

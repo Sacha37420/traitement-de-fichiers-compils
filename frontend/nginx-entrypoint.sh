@@ -12,6 +12,7 @@ window.__env = {
   keycloakRealm:    "${KEYCLOAK_REALM:-ssolab}",
   keycloakClientId: "${KEYCLOAK_CLIENT_ID}",
   apiUrl:           "https://${DOMAIN}/traitement-de-fichiers-compils-api",
+  storageUrl:       "https://${DOMAIN}/storage-api",
   appUrl:           "https://${DOMAIN}/traitement-de-fichiers-compils/"
 };
 JSEOF
@@ -22,6 +23,7 @@ window.__env = {
   keycloakRealm:    "${KEYCLOAK_REALM:-ssolab}",
   keycloakClientId: "${KEYCLOAK_CLIENT_ID}",
   apiUrl:           window.location.protocol + '//' + window.location.hostname + ':${PORT_BACKEND:-8000}',
+  storageUrl:       "${STORAGE_PUBLIC_BASE_URL:-http://localhost:8093}",
   appUrl:           window.location.protocol + '//' + window.location.hostname + ':${PORT_FRONTEND:-4200}'
 };
 JSEOF

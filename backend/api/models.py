@@ -1,5 +1,7 @@
 from django.db import models
 
+from .fields import EncryptedTextField
+
 
 class Fichier(models.Model):
     """Métadonnées d'un fichier, appartenant à une personne (email Keycloak).
@@ -67,3 +69,22 @@ class Partage(models.Model):
 
     def __str__(self):
         return f'{self.fichier_id} -> {self.destinataire}'
+
+
+class OcrKeyVault(models.Model):
+    """Coffre de la clé d'API Mistral (OCR) d'un utilisateur.
+
+    Une ligne par compte (`owner_email`, même identité que `Fichier.proprietaire`).
+    La clé est chiffrée au repos (`VAULT_ENCRYPTION_KEY`) et ne sort jamais vers le
+    navigateur : l'API ne rend que « configurée : oui / non », et c'est le backend
+    qui appelle Mistral avec la clé lue ici (`POST /api/ocr/`).
+    """
+    owner_email = models.EmailField(max_length=255, unique=True)
+    mistral_key = EncryptedTextField(blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ocr_key_vault'
+
+    def __str__(self):
+        return f'coffre de {self.owner_email}'

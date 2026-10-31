@@ -1,5 +1,9 @@
+import base64
+import logging
 import re
 from uuid import uuid4
+
+import requests
 
 from django.conf import settings
 from django.http import Http404
@@ -11,9 +15,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Fichier, Partage
+from .models import Fichier, OcrKeyVault, Partage
 from .serializers import FichierSerializer
 from . import storage_client
+
+log = logging.getLogger(__name__)
 
 
 class StandardPagination(PageNumberPagination):
@@ -252,3 +258,163 @@ class FichierPartagesView(APIView):
                                 status=status.HTTP_502_BAD_GATEWAY)
         Partage.objects.filter(fichier=fichier, destinataire=email).delete()
         return Response(FichierSerializer(fichier, context={'request': request}).data)
+
+
+# ── Coffre de la clé Mistral et OCR par le serveur (contrat « failles », I3) ──
+#
+# Avant : le navigateur appelait l'API Mistral lui-même, avec une clé gardée en
+# localStorage (lisible par tout script de la page). Maintenant la clé est
+# saisie une fois, gardée chiffrée ici (`OcrKeyVault`), jamais rendue ; c'est
+# ce backend qui appelle Mistral.
+
+_KEY_FIELD = 'mistral_key'
+_KEY_MAX_LEN = 512
+
+MISTRAL_OCR_URL = 'https://api.mistral.ai/v1/ocr'
+# Délai de lecture sous le `timeout = 120` de gunicorn (gunicorn.conf.py).
+MISTRAL_TIMEOUT = (10, 110)
+# Types que l'opération « OCR → HTML » de l'atelier envoie (frontend,
+# core/operations/ocr.ops.ts) ET que Mistral lit.
+OCR_TYPES = {'application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'}
+# Marge pour l'enveloppe multipart (frontières, en-têtes de partie, nom).
+_MULTIPART_MARGE = 64 * 1024
+
+
+def cle_ocr_du_coffre(email: str) -> str:
+    """La clé Mistral du compte `email`, '' si elle n'est pas configurée
+    (ou ne se déchiffre pas : `EncryptedTextField` la rend alors vide)."""
+    if not email:
+        return ''
+    coffre = OcrKeyVault.objects.filter(owner_email=email).first()
+    return (coffre.mistral_key or '') if coffre else ''
+
+
+class OcrKeyView(APIView):
+    """GET /api/ocr-key/ → {"mistral_key_configured": bool} — jamais la valeur,
+    ni un extrait.
+    PUT /api/ocr-key/ {"mistral_key": "…"} → 204 ; chaîne vide ⇒ supprimée."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({f'{_KEY_FIELD}_configured': bool(cle_ocr_du_coffre(request.user.email))})
+
+    def put(self, request):
+        donnees = request.data if isinstance(request.data, dict) else None
+        if not donnees:
+            return Response({'error': 'Corps attendu : {"mistral_key": "…"}.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        inconnus = sorted(set(donnees) - {_KEY_FIELD})
+        if inconnus:
+            return Response({'error': f'Champ(s) inconnu(s) : {", ".join(inconnus)}.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        valeur = donnees[_KEY_FIELD]
+        if not isinstance(valeur, str):
+            return Response({'error': f'{_KEY_FIELD} : une chaîne est attendue.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        valeur = valeur.strip()
+        if len(valeur) > _KEY_MAX_LEN or any(c.isspace() or not c.isprintable() for c in valeur):
+            return Response({'error': f'{_KEY_FIELD} : clé mal formée.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not request.user.email:
+            return Response({'error': 'Compte sans adresse email.'}, status=status.HTTP_400_BAD_REQUEST)
+        if valeur:
+            OcrKeyVault.objects.update_or_create(owner_email=request.user.email,
+                                                 defaults={_KEY_FIELD: valeur})
+        else:
+            OcrKeyVault.objects.filter(owner_email=request.user.email).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _pages_filtrees(data) -> list[dict]:
+    """Seulement `pages[].markdown` et `pages[].images[].{id, image_base64}` :
+    rien d'autre de la réponse du fournisseur n'est rendu au navigateur."""
+    pages = data.get('pages') if isinstance(data, dict) else None
+    sortie = []
+    for page in pages if isinstance(pages, list) else []:
+        if not isinstance(page, dict):
+            continue
+        images = []
+        for img in page.get('images') or []:
+            if isinstance(img, dict) and isinstance(img.get('id'), str) \
+                    and isinstance(img.get('image_base64'), str):
+                images.append({'id': img['id'], 'image_base64': img['image_base64']})
+        markdown = page.get('markdown')
+        sortie.append({'markdown': markdown if isinstance(markdown, str) else '', 'images': images})
+    return sortie
+
+
+class OcrView(APIView):
+    """POST /api/ocr/ (multipart, champ `file`) → {"pages": [{"markdown", "images"}]}.
+
+    La clé est celle du coffre de l'utilisateur connecté (`/api/ocr-key/`) ;
+    le navigateur n'envoie jamais de clé."""
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        limite = settings.OCR_MAX_OCTETS
+        trop_gros = Response(
+            {'error': f'Document trop volumineux pour l\'OCR (limite {limite / (1024 * 1024):.0f} Mo).'},
+            status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        # Refus AVANT de lire le corps.
+        try:
+            annonce = int(request.META.get('CONTENT_LENGTH') or 0)
+        except ValueError:
+            annonce = 0
+        if annonce > limite + _MULTIPART_MARGE:
+            return trop_gros
+
+        cle = cle_ocr_du_coffre(request.user.email)
+        if not cle:
+            return Response({'error': 'Clé API Mistral non configurée.', 'code': 'key_not_configured'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        document = request.FILES.get('file')
+        if not document:
+            return Response({'error': 'Le champ file est requis.'}, status=status.HTTP_400_BAD_REQUEST)
+        mime = (document.content_type or '').lower()
+        if mime not in OCR_TYPES:
+            return Response({'error': 'Type de document non pris en charge (PDF, PNG, JPEG, WebP, GIF).'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if document.size > limite:
+            return trop_gros
+
+        uri = f'data:{mime};base64,{base64.b64encode(document.read()).decode()}'
+        doc = ({'type': 'document_url', 'document_url': uri} if mime == 'application/pdf'
+               else {'type': 'image_url', 'image_url': uri})
+        try:
+            resp = requests.post(
+                MISTRAL_OCR_URL,
+                headers={'Authorization': f'Bearer {cle}', 'Content-Type': 'application/json'},
+                json={'model': 'mistral-ocr-latest', 'document': doc, 'include_image_base64': True},
+                timeout=MISTRAL_TIMEOUT,
+            )
+        except requests.Timeout:
+            log.warning('OCR : délai dépassé en attendant Mistral.')
+            return Response({'error': 'Mistral n\'a pas répondu à temps. Réessayez.'},
+                            status=status.HTTP_504_GATEWAY_TIMEOUT)
+        except requests.RequestException as exc:
+            log.warning('OCR : Mistral injoignable (%s).', type(exc).__name__)
+            return self._echec()
+
+        if resp.status_code in (401, 403):
+            log.info('OCR : clé refusée par Mistral (%s).', resp.status_code)
+            return Response({'error': 'Clé API Mistral refusée (invalide ou expirée).', 'code': 'key_rejected'},
+                            status=status.HTTP_502_BAD_GATEWAY)
+        if not resp.ok:
+            log.warning('OCR : Mistral a répondu %s.', resp.status_code)
+            return self._echec()
+        try:
+            data = resp.json()
+        except ValueError:
+            log.warning('OCR : réponse de Mistral illisible.')
+            return self._echec()
+        return Response({'pages': _pages_filtrees(data)})
+
+    @staticmethod
+    def _echec():
+        # Message générique : ni le corps ni le texte d'exception du fournisseur.
+        return Response({'error': 'L\'appel à l\'OCR Mistral a échoué. Réessayez plus tard.'},
+                        status=status.HTTP_502_BAD_GATEWAY)

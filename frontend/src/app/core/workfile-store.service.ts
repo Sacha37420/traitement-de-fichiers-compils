@@ -4,7 +4,7 @@ import {
   OperationRecord,
   workFileFromFile,
 } from './work-file.model';
-import { FileOperation } from './operations/operation.model';
+import { FileOperation, OperationContext } from './operations/operation.model';
 
 /**
  * Store client de l'atelier : la liste des fichiers en cours de traitement.
@@ -52,12 +52,13 @@ export class WorkFileStore {
     fileId: string,
     op: FileOperation,
     params: Record<string, unknown>,
+    ctx?: OperationContext,
   ): Promise<void> {
     const source = this.get(fileId);
     if (!source || !op.run) return;
     this._busy.set(true);
     try {
-      const result = await op.run(source, params);
+      const result = await op.run(source, params, ctx);
       const stamped = this.stamp(result.files, op, params);
       this._files.update((list) => {
         const idx = list.findIndex((f) => f.id === fileId);

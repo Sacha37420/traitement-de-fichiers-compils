@@ -15,9 +15,9 @@
 
     <button
       type="button" class="btn btn-ghost"
-      [title]="mistralKey() ? 'Clé Mistral enregistrée — cliquer pour modifier' : 'Configurer la clé API Mistral (OCR)'"
+      [title]="!isAuthenticated ? 'Connectez-vous pour utiliser l\'OCR' : keyConfigured() ? 'Clé Mistral enregistrée — cliquer pour la remplacer ou la retirer' : 'Configurer la clé API Mistral (OCR)'"
       (click)="openKeyModal()"
-    >🔑 Clé Mistral @if (mistralKey()) { <span class="key-dot">●</span> }</button>
+    >🔑 Clé Mistral @if (keyConfigured()) { <span class="key-dot">●</span> }</button>
 
     <span class="spacer"></span>
 
@@ -34,7 +34,7 @@
   @if (!isAuthenticated) {
     <p class="wb-hint">
       Mode hors connexion : import, traitements et téléchargement fonctionnent normalement.
-      Connectez-vous pour charger vos fichiers du serveur ou les y enregistrer.
+      Connectez-vous pour charger vos fichiers du serveur ou les y enregistrer, et pour l'OCR.
     </p>
   }
   @if (message()) { <p class="wb-msg ok">{{ message() }}</p> }
@@ -90,6 +90,7 @@
                 <button
                   type="button" class="btn btn-ghost btn-sm"
                   [disabled]="isOpDisabled(op) || busy()"
+                  [title]="op.serverOcr && !isAuthenticated ? 'Connexion requise (OCR par le serveur)' : ''"
                   (click)="launch(f, op)"
                 >{{ op.label }}</button>
               } @empty {
@@ -215,28 +216,47 @@
           <h3>Clé API Mistral</h3>
           <button type="button" class="btn btn-ghost btn-sm" (click)="keyModal.set(null)">✕</button>
         </header>
-        <div class="modal-body">
-          <label class="field">
-            <span class="flabel">Clé API</span>
-            <input type="password" autocomplete="off" placeholder="sk-..."
-                   [ngModel]="keyInput()" (ngModelChange)="keyInput.set($event)" />
-            <small class="hint">
-              Utilisée pour l'OCR → HTML. Stockée uniquement dans votre navigateur (localStorage) ;
-              l'appel se fait directement du navigateur vers l'API Mistral.
-            </small>
-          </label>
-          @if (k.pending) {
-            <p class="hint">L'opération « {{ k.pending.op.label }} » démarrera dès la clé enregistrée.</p>
-          }
-        </div>
-        <footer class="modal-foot">
-          @if (mistralKey()) {
-            <button type="button" class="btn btn-ghost" (click)="clearKey()">Effacer la clé</button>
-          }
-          <span class="spacer"></span>
-          <button type="button" class="btn btn-ghost" (click)="keyModal.set(null)">Annuler</button>
-          <button type="button" class="btn btn-primary" [disabled]="!keyInput().trim()" (click)="saveKey()">Enregistrer</button>
-        </footer>
+        @if (!isAuthenticated) {
+          <div class="modal-body">
+            <p>L'OCR est fait par le serveur, avec votre clé API Mistral gardée dans votre compte :
+               il demande d'être connecté.</p>
+            <p class="hint">Les autres opérations de l'atelier fonctionnent sans connexion.</p>
+          </div>
+          <footer class="modal-foot">
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-ghost" (click)="keyModal.set(null)">Annuler</button>
+            <button type="button" class="btn btn-primary" (click)="login()">Se connecter</button>
+          </footer>
+        } @else {
+          <div class="modal-body">
+            <p class="hint">
+              @if (keyConfigured()) { <strong>Clé enregistrée.</strong> Saisissez-en une autre pour la remplacer. }
+              @else { Aucune clé enregistrée. }
+            </p>
+            <label class="field">
+              <span class="flabel">Clé API</span>
+              <input type="password" autocomplete="off" placeholder="sk-..."
+                     [ngModel]="keyInput()" (ngModelChange)="keyInput.set($event)" />
+              <small class="hint">
+                Utilisée pour l'OCR → HTML. Envoyée une fois au serveur de l'app, qui la garde
+                chiffrée dans votre compte et ne la renvoie jamais (ni au navigateur, ni à quiconque) ;
+                c'est le serveur qui appelle Mistral avec elle.
+              </small>
+            </label>
+            @if (keyError()) { <p class="wb-msg err">{{ keyError() }}</p> }
+            @if (k.pending) {
+              <p class="hint">L'opération « {{ k.pending.op.label }} » démarrera dès la clé enregistrée.</p>
+            }
+          </div>
+          <footer class="modal-foot">
+            @if (keyConfigured()) {
+              <button type="button" class="btn btn-ghost" [disabled]="keySaving()" (click)="clearKey()">Retirer</button>
+            }
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-ghost" (click)="keyModal.set(null)">Annuler</button>
+            <button type="button" class="btn btn-primary" [disabled]="!keyInput().trim() || keySaving()" (click)="saveKey()">Enregistrer</button>
+          </footer>
+        }
       </div>
     </div>
   }

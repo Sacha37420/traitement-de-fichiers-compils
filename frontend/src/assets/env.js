@@ -4,4 +4,5 @@ window.__env = {
   keycloakClientId: 'traitement-de-fichiers-compils',
   appUrl:           'http://localhost:4207',
   apiUrl:           'http://localhost:8089',
+  storageUrl:       'http://localhost:8093',
 };

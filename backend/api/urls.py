@@ -13,4 +13,8 @@ urlpatterns = [
     # sécurisé par les ShareMember synchronisés dans FichierPartagesView).
     # Partages d'un fichier : ajouter (POST) / retirer (DELETE) — propriétaire uniquement
     path('fichiers/<int:pk>/partages/', views.FichierPartagesView.as_view()),
+    # Coffre de la clé Mistral : GET « configurée ? », PUT dépôt / retrait (chaîne vide)
+    path('ocr-key/', views.OcrKeyView.as_view()),
+    # OCR par le serveur, avec la clé du coffre (multipart, champ « file »)
+    path('ocr/', views.OcrView.as_view()),
 ]

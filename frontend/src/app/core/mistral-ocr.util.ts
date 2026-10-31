@@ -1,23 +1,14 @@
 /**
- * OCR Mistral → HTML, appelé **directement depuis le navigateur** (l'API Mistral
- * autorise le CORS). La clé API est fournie par l'appelant (stockée en localStorage
- * côté composant). marked (markdown → HTML) est importé dynamiquement.
+ * Mise en forme du résultat de l'OCR Mistral en document HTML autonome.
+ *
+ * L'OCR lui-même est fait par le serveur de l'app (`POST /api/ocr/`, avec la clé
+ * du coffre de l'utilisateur — `OcrService`) : ce fichier ne contacte personne.
+ * marked (markdown → HTML) est importé dynamiquement.
  */
 
-const OCR_ENDPOINT = 'https://api.mistral.ai/v1/ocr';
-
-interface OcrImage { id?: string; image_base64?: string; }
-interface OcrPage { index?: number; markdown?: string; images?: OcrImage[]; }
-interface OcrResponse { pages?: OcrPage[]; }
-
-function blobToDataUri(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error('Lecture du fichier impossible.'));
-    reader.readAsDataURL(blob);
-  });
-}
+export interface OcrImage { id?: string; image_base64?: string; }
+export interface OcrPage { markdown?: string; images?: OcrImage[]; }
+export interface OcrResponse { pages?: OcrPage[]; }
 
 /** Remplace les références d'images markdown (par id) par leurs data URIs base64. */
 function inlineImages(markdown: string, images: OcrImage[]): string {
@@ -59,48 +50,8 @@ ${body}
 </html>`;
 }
 
-/** Envoie le fichier à l'OCR Mistral et renvoie un document HTML autonome. */
-export async function mistralOcrToHtml(
-  blob: Blob,
-  mime: string,
-  name: string,
-  apiKey: string,
-): Promise<string> {
-  const dataUri = await blobToDataUri(blob);
-  const isPdf = mime === 'application/pdf';
-  const document = isPdf
-    ? { type: 'document_url', document_url: dataUri }
-    : { type: 'image_url', image_url: dataUri };
-
-  let res: Response;
-  try {
-    res = await fetch(OCR_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'mistral-ocr-latest',
-        document,
-        include_image_base64: true,
-      }),
-    });
-  } catch {
-    throw new Error('Impossible de joindre l\'API Mistral (réseau).');
-  }
-
-  if (!res.ok) {
-    let detail = '';
-    try {
-      const err = await res.json();
-      detail = (err && (err.message || err.detail)) || '';
-    } catch { /* corps non-JSON */ }
-    if (res.status === 401) throw new Error('Clé API Mistral invalide ou expirée.');
-    throw new Error(`Erreur Mistral (${res.status})${detail ? ' : ' + detail : ''}`);
-  }
-
-  const data = (await res.json()) as OcrResponse;
+/** Réponse de l'OCR (déjà obtenue du serveur) → document HTML autonome. */
+export async function ocrResultToHtml(data: OcrResponse, name: string): Promise<string> {
   const pages = data.pages ?? [];
   const markdown = pages
     .map((p) => inlineImages(p.markdown ?? '', p.images ?? []))

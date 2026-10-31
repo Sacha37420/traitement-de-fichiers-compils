@@ -155,6 +155,13 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600
 # Limite de poids par fichier envoyé au backend (défaut : 25 Mo).
 MAX_FICHIER_OCTETS = config('MAX_FICHIER_OCTETS', default=26214400, cast=int)
 
+# ── Coffre des clés d'API (contrat « failles », I3) ───────────────────────────
+# Clé Fernet du coffre (api/fields.py), SANS valeur par défaut : jamais dérivée
+# de SECRET_KEY — faire tourner SECRET_KEY ne doit ni détruire ni livrer les clés.
+VAULT_ENCRYPTION_KEY = config('VAULT_ENCRYPTION_KEY')
+# Poids maximal d'un document envoyé à l'OCR (POST /api/ocr/), 20 Mo par défaut.
+OCR_MAX_OCTETS = config('OCR_MAX_OCTETS', default=20971520, cast=int)
+
 # ── Stockage des fichiers (délégué à l'app storage) ───────────────────────────
 # Les octets ne sont plus dans devdb (ancien Fichier.fichier_binaire, un
 # BinaryField — voir CLAUDE.md racine, section « Fichiers rasters / médias ») :
