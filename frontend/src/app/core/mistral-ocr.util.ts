@@ -4,7 +4,34 @@
  * L'OCR lui-même est fait par le serveur de l'app (`POST /api/ocr/`, avec la clé
  * du coffre de l'utilisateur — `OcrService`) : ce fichier ne contacte personne.
  * marked (markdown → HTML) est importé dynamiquement.
+ *
+ * Le markdown vient d'un document quelconque : il peut porter du HTML brut
+ * (`<script>`, `onerror=`, liens `javascript:`…), que marked recopie tel quel.
+ * Le HTML produit est donc TOUJOURS assaini par DOMPurify avant d'entrer dans
+ * le document, et ce document interdit en plus tout script (CSP).
  */
+import DOMPurify from 'dompurify';
+
+type Purifier = Pick<typeof DOMPurify, 'sanitize' | 'isSupported'>;
+
+/**
+ * Ne garde que le HTML de mise en forme : titres, paragraphes, listes,
+ * tableaux, code, images en `data:image/…`, liens `http(s)`/`mailto`.
+ * Aucun script, gestionnaire d'événement, `style`, formulaire, cadre ni objet.
+ */
+export function sanitizeOcrHtml(html: string, purify: Purifier = DOMPurify): string {
+  // Sans DOM (purify.isSupported faux), DOMPurify rendrait l'entrée telle quelle.
+  if (!purify.isSupported) throw new Error('Assainissement du HTML indisponible.');
+  return purify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'option',
+                  'iframe', 'frame', 'object', 'embed', 'link', 'meta', 'base', 'svg', 'math'],
+    FORBID_ATTR: ['style', 'srcset', 'action', 'formaction'],
+    // href/src : http(s), mailto et ancres seulement (les images `data:` passent par la règle d'images de DOMPurify).
+    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|#)/i,
+    RETURN_TRUSTED_TYPE: false,
+  }) as string;
+}
 
 export interface OcrImage { id?: string; image_base64?: string; }
 export interface OcrPage { markdown?: string; images?: OcrImage[]; }
@@ -33,6 +60,7 @@ function wrapHtml(title: string, body: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
 <title>${escapeHtml(title)}</title>
 <style>
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6;
@@ -58,7 +86,7 @@ export async function ocrResultToHtml(data: OcrResponse, name: string): Promise<
     .join('\n\n---\n\n');
 
   const { marked } = await import('marked');
-  const body = await marked.parse(markdown || '_Aucun texte détecté._');
+  const body = sanitizeOcrHtml(await marked.parse(markdown || '_Aucun texte détecté._'));
   const title = name.replace(/\.[^.]+$/, '');
   return wrapHtml(title, body);
 }
