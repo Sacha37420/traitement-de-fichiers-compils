@@ -56,8 +56,8 @@ aperçus vidéo, OCR, partage entre deux comptes.
 - [x] `README.md` : but, traitements, OCR (par le serveur, coffre chiffré), partage, tests
 **Tests à passer avant de clore le lot :**
 - [x] `python manage.py test api.tests.test_coffre` passe (configured seul, chiffré en base, clé d'autrui ni lue ni utilisée, autre `azp` refusé, Mistral simulé recevant la clé du coffre, 413, 502/504)
-- [ ] Interception Playwright : aucun en-tête `Authorization` vers une autre origine que l'API
-- [ ] WOFF2 en 200
+- [x] Interception Playwright : aucun en-tête `Authorization` vers une autre origine que l'API — vérifié le 2026-11-01 (lab-runner, `e2e_member`)
+- [x] WOFF2 en 200 — vérifié le 2026-11-01 (lab-runner, `e2e_member`)
 **Vérifié le :** 2026-11-01 — `bash chantiers/tests/essai.sh traitement-de-fichiers-compils` : 73 tests, OK ; `npx ng build` sans erreur — non déployé ; vérifications navigateur à faire après déploiement.
 
 ## Lot 5 — Évolutions possibles   ·   statut : à faire
