@@ -10,8 +10,10 @@ dépôt du lab. Légende : [C] constaté, [D] déduit.
 
 **Pas de test de cloisonnement navigateur, à dessein** : la page est publique (`check-sso`) et
 l'atelier tourne dans le navigateur. La protection tient dans l'API (groupe `developers`, propriétaire
-et destinataires des partages), et ses tests backend la vérifient. Une exemption déclarée est à
-ajouter à `validate-app.sh` (chantier T1).
+et destinataires des partages), et ses tests backend la vérifient. La ligne suivante est l'exemption
+déclarée que lit `validate-app.sh` (réservée aux apps du superutilisateur) :
+
+cloisonnement : aucun — page publique en check-sso, protection dans l'API, tenue par ses tests backend
 
 ## Commande de test
 python manage.py test
