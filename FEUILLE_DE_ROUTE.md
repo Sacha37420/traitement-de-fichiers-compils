@@ -47,7 +47,7 @@ aperçus vidéo, OCR, partage entre deux comptes.
 - [ ] Recadrage, filtres et rendu PDF produisent un fichier téléchargeable
 **Vérifié le :**
 
-## Lot 4 — Gabarit front et documentation   ·   statut : en cours
+## Lot 4 — Gabarit front et documentation   ·   statut : livré
 **Objectif :** même comportement que le gabarit corrigé (T3), et un README.
 **Tâches :**
 - [x] Polices en chemin relatif (`styles.scss:3-11`) ; `pkceMethod: 'S256'`
@@ -61,6 +61,7 @@ aperçus vidéo, OCR, partage entre deux comptes.
 - [x] Interception Playwright : aucun en-tête `Authorization` vers une autre origine que l'API — vérifié le 2026-11-01 (lab-runner, `e2e_member`)
 - [x] WOFF2 en 200 — vérifié le 2026-11-01 (lab-runner, `e2e_member`)
 **Vérifié le :** 2026-11-01 — `bash chantiers/tests/essai.sh traitement-de-fichiers-compils` : 73 tests, OK ; `npx ng build` sans erreur — non déployé ; vérifications navigateur à faire après déploiement.
+Statut passé à « livré » le 2026-11-08 (relecture de nuit) : toutes les tâches et tous les tests cochés (navigateur le 2026-11-01, commit `6e12c17`), mis en service le 2026-11-01 (section « Mise en service » ; `scripts/app-status.sh` : déploiement `3feb3bc`, backend `ok`). README relu contre `backend/api/urls.py` et `config/settings.py:156,163` : juste.
 
 ## Lot 5 — Évolutions possibles   ·   statut : à faire
 **Objectif :** pistes notées pendant la refonte, à confirmer par l'usage (Ⓟ).
