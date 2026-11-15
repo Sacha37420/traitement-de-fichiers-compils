@@ -110,3 +110,31 @@
   border-radius: var(--radius);
   font-size: 13px;
 }
+
+.mf-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+.mf-filter label { color: var(--text-muted); font-weight: 600; }
+.mf-filter select {
+  min-height: 44px;
+  min-width: 220px;
+  max-width: 100%;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+.mf-filter .btn { min-height: 44px; }
+.mf-table .fdir {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}

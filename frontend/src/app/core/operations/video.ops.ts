@@ -40,7 +40,9 @@ const extractFrames: FileOperation = {
     }
     const base = file.name.replace(/\.[^.]+$/, '');
     const files = blobs.map((b, i) =>
-      workFileFromBlob(b, `${base}-frame-${i + 1}.${ext}`, mime, { origin: 'local' }),
+      // Groupe = nom de la vidéo : envoyées au serveur, ces images vont toutes
+      // dans un même dossier (un seul partage storage) au lieu d'un partage chacune.
+      workFileFromBlob(b, `${base}-frame-${i + 1}.${ext}`, mime, { origin: 'local', group: base }),
     );
     return { files, replacesSource: false };
   },

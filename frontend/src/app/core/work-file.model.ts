@@ -35,6 +35,12 @@ export interface WorkFile {
   backendId?: number;
   /** Historique des opérations appliquées. */
   history: OperationRecord[];
+  /**
+   * Groupe d'origine (ex. nom de la vidéo dont l'image a été extraite). À
+   * l'envoi au serveur, un fichier groupé est déposé dans le dossier de ce nom
+   * (créé une fois par groupe et par session — cf. FichierService.dossierPourGroupe).
+   */
+  group?: string;
 }
 
 export function kindFromMime(mime: string): FileKind {
@@ -63,7 +69,7 @@ export function workFileFromBlob(
   blob: Blob,
   name: string,
   mime: string,
-  opts: { origin?: 'local' | 'backend'; backendId?: number; history?: OperationRecord[] } = {},
+  opts: { origin?: 'local' | 'backend'; backendId?: number; history?: OperationRecord[]; group?: string } = {},
 ): WorkFile {
   return {
     id: uuid(),
@@ -75,6 +81,7 @@ export function workFileFromBlob(
     origin: opts.origin ?? 'local',
     backendId: opts.backendId,
     history: opts.history ?? [],
+    group: opts.group,
   };
 }
 

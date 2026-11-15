@@ -73,6 +73,25 @@ Statut passé à « livré » le 2026-11-08 (relecture de nuit) : toutes les tâ
 - [ ] À définir avec chaque tâche retenue
 **Vérifié le :**
 
+## Lot 6 — Dossiers et hiérarchie storage   ·   statut : en cours
+**Objectif :** chantier « storage-hierarchie » (contrat v2, `chantiers/storage-hierarchie/` du lab) :
+plus de centaines de partages `tdfc-…` à la racine de storage. Tout partage de l'app est rangé sous
+le conteneur `traitement-de-fichiers-compils` (au compte de service) ; les images extraites d'une
+vidéo vont dans un **Dossier** (un seul partage `tdfc-d-<hex>`, noms lisibles) ; un fichier isolé
+ou partagé garde un partage à lui (partager un fichier n'ouvre jamais les autres).
+**Tâches :**
+- [x] Modèle `Dossier` (table `dossiers`), `Fichier.dossier` (PROTECT), migration `0007` sans appel réseau
+- [x] `storage_client.create_share` : création explicite avant l'upload, rattachée au conteneur ou au partage du dossier ; jamais un dépôt en échec à cause du rattachement (racine + avertissement)
+- [x] API : `GET`/`POST /api/dossiers/`, `DELETE /api/dossiers/<id>/` (partages enfants d'abord) ; `dossier` à l'envoi (le mien seulement) ; `?dossier=<id>|aucun` ; partager un fichier d'un dossier le sort dans un partage enfant du dossier
+- [x] Commande `python manage.py rattacher_partages_storage [--check]` (regroupe `<base>-frame-<N>`, déplace les octets, rattache), rejouable après interruption
+- [x] Frontend : extraction d'images marquée d'un groupe (nom de la vidéo) → un dossier par groupe et par session à l'envoi ; « Mes fichiers » : colonne et filtre Dossier, suppression d'un dossier
+- [ ] Après déploiement (architecte) : transfert du conteneur au compte de service (I0), `--check`, puis la commande
+**Tests à passer avant de clore le lot :**
+- [x] `python manage.py test` : 101 tests (dont `test_dossiers`, `test_rattacher` : dossier d'autrui refusé, destinataire jamais membre du dossier, reprise après interruption sans perte ni doublon, taille vérifiée)
+- [x] `npx ng build` (production) sans erreur
+- [ ] `rattacher_partages_storage --check` conclut « Rien à faire » sur les données réelles après la commande
+**Vérifié le :** 2026-11-15 — `chantiers/tests/essai.sh` (clone `host/storage-hierarchie`) : 101 tests OK ; `makemigrations --check` : rien ; `ng build` OK. Non déployé, commande non jouée sur les données réelles.
+
 ## Mise en service — chantier « failles » (2026-11-01)
 Les mentions « non déployé » ci-dessus datent d'avant cette mise en service. Image construite pendant
 que l'ancienne tournait, `scripts/app-test.sh` : 73 tests OK, puis `up -d --no-build` ; ports
