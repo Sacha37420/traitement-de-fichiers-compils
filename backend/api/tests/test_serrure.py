@@ -13,7 +13,7 @@ from api import urls as api_urls
 from .socle import AUTRE_RSA, CLIENT, KID, SocleTestCase, _RSA, jeton
 
 ROUTES = ['/api/fichiers/', '/api/fichiers/partages/', '/api/fichiers/1/', '/api/fichiers/1/partages/',
-          '/api/ocr-key/', '/api/ocr/']
+          '/api/dossiers/', '/api/dossiers/1/', '/api/ocr-key/', '/api/ocr/']
 
 
 class SerrureTests(SocleTestCase):

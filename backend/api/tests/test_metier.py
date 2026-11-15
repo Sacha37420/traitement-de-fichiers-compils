@@ -21,7 +21,18 @@ class DepotTests(SocleTestCase):
             'fichiers': {'rapport.pdf': b'%PDF-1.4 abc'},
             # Sans cette ligne, le propriétaire lui-même ne lirait pas son fichier.
             'membres': {'alice@exemple.org': 'read'},
+            # Créé explicitement, rattaché au conteneur de l'app (contrat I1).
+            'parent': 'traitement-de-fichiers-compils',
+            'owner': 'service:traitement-de-fichiers-compils-admin',
         })
+        # Ordre : conteneur vérifié/créé, partage créé, PUIS les octets.
+        self.assertEqual(self.reseau.appels(), [
+            ('GET', '/api/shares/traitement-de-fichiers-compils/members/'),
+            ('POST', '/api/shares/'),
+            ('POST', '/api/shares/'),
+            ('POST', f'/api/files/{f.storage_namespace}/'),
+            ('POST', f'/api/shares/{f.storage_namespace}/members/'),
+        ])
         self.assertEqual((f.proprietaire, f.type, f.fichier_type_mime, f.fichier_path),
                          ('alice@exemple.org', 'PDF', 'application/pdf', 'rapport.pdf'))
         self.assertEqual(resp.json()['fichier_url'],
@@ -45,7 +56,7 @@ class DepotTests(SocleTestCase):
         resp = self.deposer(self.alice, contenu=b'x' * 1025)
         self.assertEqual(resp.status_code, 413)
         self.assertEqual(Fichier.objects.count(), 1)
-        self.assertEqual(len(self.reseau.partages), 1)        # rien n'est parti vers storage
+        self.assertEqual(len(self.reseau.partages), 2)        # conteneur + 1 : rien de plus
 
     @override_settings(MAX_FICHIER_OCTETS=4 * 1024 * 1024)
     def test_la_taille_est_enregistree_en_mo(self):
@@ -91,8 +102,8 @@ class DepotTests(SocleTestCase):
         self.assertEqual(f.nom, '../../autre/été 2026.pdf')
         self.assertEqual(f.fichier_path, '_.._autre_t_2026.pdf')
         # La requête réellement émise est restée dans le Share du fichier.
-        self.assertEqual(self.reseau.appels('POST')[0], ('POST', f'/api/files/{f.storage_namespace}/'))
-        self.assertEqual(list(self.reseau.partages), [f.storage_namespace])
+        self.assertIn(('POST', f'/api/files/{f.storage_namespace}/'), self.reseau.appels('POST'))
+        self.assertEqual(sorted(self.reseau.partages), sorted([f.storage_namespace, 'traitement-de-fichiers-compils']))
 
     # Corrigé : le nom était borné par la base seulement, APRÈS le dépôt des
     # octets (DataError → 500, Share orphelin).
@@ -147,8 +158,8 @@ class PannesTests(SocleTestCase):
         self.reseau.pannes.add('add_member')
         self.assertEqual(self.deposer(self.alice).status_code, 502)
         self.assertFalse(Fichier.objects.exists())
-        self.assertEqual(self.reseau.partages, {})
-        self.assertEqual([m for m, _ in self.reseau.appels()], ['POST', 'POST', 'DELETE'])
+        self.assertEqual(list(self.reseau.partages), ['traitement-de-fichiers-compils'])
+        self.assertEqual([m for m, _ in self.reseau.appels()], ['GET', 'POST', 'POST', 'POST', 'POST', 'DELETE'])
 
     def test_partage_storage_d_abord_la_ligne_ensuite(self):
         f = self.fichier_de(self.alice)
