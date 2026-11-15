@@ -1,4 +1,5 @@
 import base64
+import io
 import logging
 import re
 from uuid import uuid4
@@ -6,6 +7,8 @@ from uuid import uuid4
 import requests
 
 from django.conf import settings
+from django.db import transaction
+from django.db.models import Count
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -15,8 +18,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Fichier, OcrKeyVault, Partage
-from .serializers import FichierSerializer
+from .models import Dossier, Fichier, OcrKeyVault, Partage
+from .serializers import DossierSerializer, FichierSerializer
 from . import storage_client
 
 log = logging.getLogger(__name__)
@@ -45,6 +48,82 @@ def _safe_name(nom: str) -> str:
     reste intact dans Fichier.nom — c'est lui qui est renvoyé au navigateur."""
     cleaned = re.sub(r'[^A-Za-z0-9._-]+', '_', (nom or '').strip()) or 'fichier'
     return cleaned.strip('.') or 'fichier'
+
+
+def chemin_libre(namespace: str, nom_sur: str, exclude_pk=None) -> str:
+    """Chemin lisible et libre dans le partage d'un Dossier : `nom_sur`, ou
+    `<nom>-2.<ext>`, `-3`… s'il est déjà pris par un autre fichier de ce
+    partage (storage écraserait le contenu au même chemin). Déterministe pour
+    un même état de la base : la commande de migration en dépend pour être
+    rejouable sans doublon."""
+    pris = set(
+        Fichier.objects.filter(storage_namespace=namespace)
+        .exclude(pk=exclude_pk).values_list('fichier_path', flat=True)
+    )
+    if nom_sur not in pris:
+        return nom_sur
+    stem, point, ext = nom_sur.rpartition('.')
+    if not point or not stem:
+        stem, ext = nom_sur, ''
+    n = 2
+    while True:
+        candidat = f'{stem}-{n}.{ext}' if ext else f'{stem}-{n}'
+        if candidat not in pris:
+            return candidat
+        n += 1
+
+
+def _purger(namespace: str, relative_path: str, dans_dossier: bool) -> None:
+    """Purge storage d'un Fichier déjà supprimé en base, au mieux : seul dans
+    son partage → le partage ; dans le partage de son dossier → son contenu."""
+    if not namespace:
+        return
+    try:
+        if dans_dossier:
+            storage_client.delete_file(namespace, relative_path)
+        else:
+            storage_client.delete_share(namespace)
+    except storage_client.StorageClientError:
+        log.warning('storage : purge d\'un fichier supprimé impossible (orphelin laissé).')
+
+
+def _sortir_du_dossier(fichier: Fichier) -> None:
+    """Déplace un fichier du partage de son dossier vers un partage à lui,
+    enfant de celui du dossier (avant de le partager : un destinataire n'est
+    jamais membre du partage du dossier). Le fichier reste dans le Dossier.
+    Lève StorageClientError ; rien n'a alors changé en base."""
+    ancien = fichier.storage_namespace
+    chemin = fichier.fichier_path
+    nouveau = f'{settings.STORAGE_NAMESPACE_PREFIX}{uuid4().hex}'
+    storage_client.create_share(nouveau, parent=ancien)
+    try:
+        resp = storage_client.download_from(ancien, chemin)
+        try:
+            octets = b''.join(resp.iter_content(65536))
+        finally:
+            resp.close()
+        result = storage_client.upload_to(
+            nouveau, chemin, io.BytesIO(octets), chemin.rsplit('/', 1)[-1],
+            fichier.fichier_type_mime or 'application/octet-stream',
+        )
+        if int(result.get('size', -1)) != len(octets):
+            raise storage_client.StorageClientError('Taille déposée inattendue.')
+        storage_client.add_member(nouveau, fichier.proprietaire, role='read')
+    except storage_client.StorageClientError:
+        try:
+            storage_client.delete_share(nouveau)
+        except storage_client.StorageClientError:
+            pass
+        raise
+    fichier.storage_namespace = nouveau
+    fichier.fichier_path = result['relative_path']
+    fichier.save(update_fields=['storage_namespace', 'fichier_path'])
+    try:
+        storage_client.delete_file(ancien, chemin)
+    except storage_client.StorageClientError:
+        # Copie restée dans le partage du dossier : lisible du seul
+        # propriétaire, écrasée par un dépôt ultérieur au même nom.
+        log.warning('storage : ancienne copie laissée dans le partage du dossier.')
 
 
 _EMAIL_RE = re.compile(r'[^@\s/\\%]+@[^@\s/\\%]+')
@@ -79,10 +158,19 @@ class FichiersView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
-        qs = Fichier.objects.filter(proprietaire=request.user.email).prefetch_related('partages')
+        qs = (Fichier.objects.filter(proprietaire=request.user.email)
+              .select_related('dossier').prefetch_related('partages'))
         type_filter = request.query_params.get('type')
         if type_filter:
             qs = qs.filter(type=type_filter)
+        # ?dossier=<id> : les fichiers de ce dossier ; ?dossier=aucun : hors dossier.
+        dossier_filter = request.query_params.get('dossier')
+        if dossier_filter == 'aucun':
+            qs = qs.filter(dossier__isnull=True)
+        elif dossier_filter:
+            if not dossier_filter.isdigit():
+                return Response({'error': 'Dossier invalide.'}, status=400)
+            qs = qs.filter(dossier_id=int(dossier_filter))
         paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         data = FichierSerializer(page, many=True, context={'request': request}).data
@@ -114,12 +202,35 @@ class FichiersView(APIView):
             return Response({'error': 'Type de contenu invalide.'}, status=400)
         taille = fichier_file.size
         safe_name = _safe_name(nom)
-        # Un Share storage PAR fichier (pas un global) : c'est ce qui permettra
-        # au propriétaire de le lire en direct (cf. FichierSerializer) sans
-        # donner accès à ses autres fichiers — voir api/storage_client.py pour
-        # le raisonnement complet. Le nom est unique et n'a pas besoin d'exister
-        # au préalable : storage le crée au premier upload (write_prefix).
+
+        # Dossier facultatif : un dossier DONT JE SUIS PROPRIÉTAIRE, jamais
+        # celui d'un autre (404, même réponse qu'un dossier inexistant).
+        dossier = None
+        dossier_id = request.data.get('dossier')
+        if dossier_id not in (None, ''):
+            if not str(dossier_id).isdigit():
+                return Response({'error': 'Dossier invalide.'}, status=400)
+            if not request.user.email:
+                return Response({'error': 'Dossier introuvable.'}, status=404)
+            dossier = Dossier.objects.filter(pk=int(dossier_id), proprietaire=request.user.email).first()
+            if dossier is None:
+                return Response({'error': 'Dossier introuvable.'}, status=404)
+
+        if dossier is not None:
+            return self._deposer_dans_dossier(request, dossier, fichier_file, nom, type_, mime,
+                                              taille, safe_name)
+
+        # Fichier isolé : un Share storage PAR fichier (pas un global) : c'est
+        # ce qui permet au propriétaire de le lire en direct (cf.
+        # FichierSerializer) sans donner accès à ses autres fichiers — voir
+        # api/storage_client.py. Le partage est créé explicitement, rattaché au
+        # conteneur de l'app (contrat I1), AVANT l'upload.
         namespace = f'{settings.STORAGE_NAMESPACE_PREFIX}{uuid4().hex}'
+        try:
+            storage_client.create_share(namespace)
+        except storage_client.StorageClientError as exc:
+            return Response({'error': f'Stockage indisponible : {exc}'},
+                            status=status.HTTP_502_BAD_GATEWAY)
         # Les octets partent vers storage AVANT la création de la ligne : une
         # ligne sans fichier serait un fichier fantôme dans la liste de
         # l'utilisateur, alors qu'un blob sans ligne n'est qu'un orphelin
@@ -127,6 +238,10 @@ class FichiersView(APIView):
         try:
             result = storage_client.upload_to(namespace, safe_name, fichier_file, safe_name, mime)
         except storage_client.StorageClientError as exc:
+            try:
+                storage_client.delete_share(namespace)
+            except storage_client.StorageClientError:
+                pass
             return Response({'error': f'Stockage indisponible : {exc}'},
                             status=status.HTTP_502_BAD_GATEWAY)
 
@@ -156,6 +271,107 @@ class FichiersView(APIView):
             proprietaire=request.user.email,
         )
         return Response(FichierSerializer(fichier, context={'request': request}).data, status=201)
+
+    def _deposer_dans_dossier(self, request, dossier, fichier_file, nom, type_, mime, taille, safe_name):
+        """Dépôt direct dans le partage du dossier (son propriétaire y est déjà
+        membre), sous un nom lisible et libre dans ce dossier.
+
+        Le chemin est RÉSERVÉ par la ligne, créée sous verrou du dossier avant
+        l'envoi : deux dépôts simultanés du même nom (l'atelier envoie en
+        parallèle) n'écrivent jamais au même chemin. Le verrou n'est tenu que le
+        temps du choix du nom, pas pendant l'envoi. En cas d'échec de l'envoi,
+        la ligne est retirée."""
+        with transaction.atomic():
+            Dossier.objects.select_for_update().get(pk=dossier.pk)
+            chemin = chemin_libre(dossier.storage_namespace, safe_name)
+            fichier = Fichier.objects.create(
+                nom=nom,
+                type=type_,
+                taille_fichier=round(taille / (1024 * 1024), 3),
+                fichier_path=chemin,
+                storage_namespace=dossier.storage_namespace,
+                fichier_type_mime=mime,
+                proprietaire=request.user.email,
+                dossier=dossier,
+            )
+        try:
+            storage_client.upload_to(dossier.storage_namespace, chemin, fichier_file, safe_name, mime)
+        except storage_client.StorageClientError as exc:
+            fichier.delete()
+            return Response({'error': f'Stockage indisponible : {exc}'},
+                            status=status.HTTP_502_BAD_GATEWAY)
+        return Response(FichierSerializer(fichier, context={'request': request}).data, status=201)
+
+
+class DossiersView(APIView):
+    """GET : mes dossiers. POST {nom} : crée un dossier et son partage storage
+    (rattaché au conteneur de l'app, contrat I1/I2)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = Dossier.objects.filter(proprietaire=request.user.email).annotate(nb_fichiers=Count('fichiers'))
+        return Response(DossierSerializer(qs, many=True).data)
+
+    def post(self, request):
+        nom = request.data.get('nom')
+        nom = nom.strip() if isinstance(nom, str) else ''
+        if not nom:
+            return Response({'error': 'Le nom du dossier est requis.'}, status=400)
+        if len(nom) > Dossier._meta.get_field('nom').max_length:
+            return Response({'error': 'Nom de dossier trop long (200 caractères au plus).'}, status=400)
+        if not request.user.email:
+            return Response({'error': 'Compte sans adresse email.'}, status=400)
+        namespace = f'{settings.STORAGE_NAMESPACE_PREFIX}d-{uuid4().hex}'
+        try:
+            storage_client.create_share(namespace)
+        except storage_client.StorageClientError as exc:
+            return Response({'error': f'Stockage indisponible : {exc}'},
+                            status=status.HTTP_502_BAD_GATEWAY)
+        try:
+            storage_client.add_member(namespace, request.user.email, role='read')
+        except storage_client.StorageClientError as exc:
+            try:
+                storage_client.delete_share(namespace)
+            except storage_client.StorageClientError:
+                pass
+            return Response({'error': f'Stockage indisponible : {exc}'},
+                            status=status.HTTP_502_BAD_GATEWAY)
+        dossier = Dossier.objects.create(nom=nom, proprietaire=request.user.email,
+                                         storage_namespace=namespace)
+        dossier.nb_fichiers = 0
+        return Response(DossierSerializer(dossier).data, status=201)
+
+
+class DossierDetailView(APIView):
+    """DELETE : supprime mes fichiers de ce dossier (octets compris), puis le
+    dossier et son partage storage. Propriétaire uniquement (404 sinon)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        if not request.user.email:
+            raise Http404
+        dossier = get_object_or_404(Dossier, pk=pk, proprietaire=request.user.email)
+        fichiers = list(dossier.fichiers.all())
+        # Partages propres des fichiers partagés du dossier : ce sont des
+        # ENFANTS du partage du dossier, et storage refuse de supprimer un
+        # partage qui a des enfants — ils partent donc d'abord. Les fichiers
+        # restés dans le partage du dossier partent avec lui.
+        enfants = [f.storage_namespace for f in fichiers
+                   if f.storage_namespace and f.storage_namespace != dossier.storage_namespace]
+        namespace = dossier.storage_namespace
+        with transaction.atomic():
+            Fichier.objects.filter(pk__in=[f.pk for f in fichiers]).delete()
+            dossier.delete()
+        # Purge après coup, au mieux (même choix que la suppression d'un fichier).
+        for ns in enfants:
+            _purger(ns, '', dans_dossier=False)
+        try:
+            storage_client.delete_share(namespace)
+        except storage_client.StorageClientError:
+            log.warning('storage : partage d\'un dossier supprimé laissé en place (orphelin).')
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class PartagesAvecMoiView(APIView):
@@ -189,6 +405,8 @@ class FichierDetailView(APIView):
     def delete(self, request, pk):
         fichier = _owned(request, pk)
         namespace = fichier.storage_namespace
+        chemin = fichier.fichier_path
+        dans_dossier = fichier.dans_partage_du_dossier
         fichier.delete()
         # Purge après coup : si storage refusait la suppression, mieux vaut un
         # Share orphelin (inaccessible depuis l'app, ses ShareMember ne sont
@@ -196,12 +414,9 @@ class FichierDetailView(APIView):
         # a demandé la suppression (et que les partages ont déjà disparu en
         # cascade). Le Share étant dédié à ce seul fichier, le supprimer en
         # entier (plutôt qu'un simple delete de contenu) purge aussi ses
-        # ShareMember d'un coup — rien à faire membre par membre.
-        if namespace:
-            try:
-                storage_client.delete_share(namespace)
-            except storage_client.StorageClientError:
-                pass
+        # ShareMember d'un coup — rien à faire membre par membre. Un fichier
+        # resté dans le partage de son dossier : seul son contenu part.
+        _purger(namespace, chemin, dans_dossier)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -227,6 +442,19 @@ class FichierPartagesView(APIView):
         if not fichier.storage_namespace:
             return Response({'error': 'Ce fichier ne peut pas être partagé (stockage incomplet).'},
                             status=status.HTTP_409_CONFLICT)
+        # Fichier encore dans le partage de son dossier : il en sort d'abord
+        # (partage à lui, enfant de celui du dossier) — le destinataire ne
+        # devient jamais membre du partage du dossier, il lirait tout le dossier.
+        # Verrou sur la ligne : deux partages simultanés ne le déplacent qu'une fois.
+        if fichier.dossier_id:
+            with transaction.atomic():
+                fichier = Fichier.objects.select_for_update(of=('self',)).select_related('dossier').get(pk=fichier.pk)
+                if fichier.dans_partage_du_dossier:
+                    try:
+                        _sortir_du_dossier(fichier)
+                    except storage_client.StorageClientError as exc:
+                        return Response({'error': f'Stockage indisponible : {exc}'},
+                                        status=status.HTTP_502_BAD_GATEWAY)
         # Storage AVANT la ligne Partage : un ShareMember sans Partage ne donne
         # rien de plus que ce que l'app a déjà décidé d'accorder (juste un léger
         # retard d'enregistrement si la requête est rejouée) ; l'inverse — une

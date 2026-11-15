@@ -35,12 +35,27 @@ identifiant unique par fichier ajouté (cf. ``validate_namespace_slug``) : on
 utilise donc l'abréviation compacte ``tdfc-`` (vérifié sans collision avec les
 Share existants au moment de l'écriture).
 
-Le partage PAR FICHIER n'a plus besoin d'exister au préalable : il est créé
-automatiquement par storage au premier upload (``get_or_create`` dans
-``api.permissions.resolve_namespace`` côté storage), dès lors que le compte de
-service a un ``write_prefix`` configuré sur ``tdfc-`` via
-``KEYCLOAK_SERVICE_WRITE_PREFIXES=traitement-de-fichiers-compils-admin:tdfc-``
-(``storage/.env``).
+Création des partages (chantier « storage-hierarchie », 2026-11-15, contrat
+I1) : l'app ne compte plus sur la création implicite par storage au premier
+upload (``get_or_create`` sous le ``write_prefix`` ``tdfc-``, toujours
+configuré par ``KEYCLOAK_SERVICE_WRITE_PREFIXES``) : elle crée chaque partage
+explicitement par ``create_share`` AVANT l'upload, rattaché sous le conteneur
+``traitement-de-fichiers-compils`` (``settings.STORAGE_NAMESPACE``, propriété
+du compte de service) ou sous le partage d'un dossier. Arborescence :
+
+    traitement-de-fichiers-compils       conteneur
+     ├─ tdfc-<hex>                       fichier isolé (un partage à lui)
+     └─ tdfc-d-<hex>                     Dossier : ses fichiers non partagés,
+         │                               sous un nom lisible ; seul membre :
+         │                               le propriétaire
+         └─ tdfc-<hex>                   fichier du dossier partagé à quelqu'un
+
+Partager UN fichier ne donne toujours accès qu'à lui : le destinataire est
+membre du partage propre du fichier, jamais de celui du dossier. La hiérarchie
+n'est que de l'organisation (storage n'en tire aucun droit) : un conteneur
+indisponible ou un parent refusé fait créer le partage à la racine, avec un
+avertissement, sans jamais faire échouer le dépôt. Les partages existants sont
+rangés par ``manage.py rattacher_partages_storage`` (I3).
 
 L'ancien partage global unique (``settings.STORAGE_NAMESPACE`` =
 ``traitement-de-fichiers-compils``, ``KEYCLOAK_SERVICE_WRITE_SHARES``) reste
@@ -54,6 +69,7 @@ ne pas changer leur signature. Les nouvelles fonctions à namespace explicite
 """
 from __future__ import annotations
 
+import logging
 import time
 from urllib.parse import quote
 
@@ -64,7 +80,15 @@ _TIMEOUT = 30
 
 
 class StorageClientError(RuntimeError):
-    """Erreur de communication ou de configuration avec l'API storage."""
+    """Erreur de communication ou de configuration avec l'API storage.
+
+    ``status_code`` : code HTTP de storage quand il y en a un (None : réseau,
+    configuration). La commande ``rattacher_partages_storage`` n'affiche que
+    lui, jamais le message (qui peut citer une URL)."""
+
+    def __init__(self, message: str = '', status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def _split_issuer() -> tuple[str, str]:
@@ -205,7 +229,8 @@ def upload_to(namespace: str, relative_path: str, fileobj, filename: str, conten
         raise StorageClientError(f'storage injoignable : {exc}') from exc
     if resp.status_code != 201:
         raise StorageClientError(
-            f'Upload storage échoué (HTTP {resp.status_code}) : {resp.text[:200]}'
+            f'Upload storage échoué (HTTP {resp.status_code}) : {resp.text[:200]}',
+            resp.status_code,
         )
     return resp.json()
 
@@ -223,7 +248,8 @@ def download_from(namespace: str, relative_path: str) -> requests.Response:
     except requests.RequestException as exc:
         raise StorageClientError(f'storage injoignable : {exc}') from exc
     if resp.status_code != 200:
-        raise StorageClientError(f'Téléchargement storage échoué (HTTP {resp.status_code}).')
+        raise StorageClientError(f'Téléchargement storage échoué (HTTP {resp.status_code}).',
+                                 resp.status_code)
     return resp
 
 
@@ -238,7 +264,8 @@ def delete_share(namespace: str) -> None:
     except requests.RequestException as exc:
         raise StorageClientError(f'storage injoignable : {exc}') from exc
     if resp.status_code not in (204, 404):
-        raise StorageClientError(f'Suppression storage échouée (HTTP {resp.status_code}).')
+        raise StorageClientError(f'Suppression storage échouée (HTTP {resp.status_code}).',
+                                 resp.status_code)
 
 
 def add_member(namespace: str, email: str, role: str = 'read') -> dict:
@@ -255,7 +282,8 @@ def add_member(namespace: str, email: str, role: str = 'read') -> dict:
         raise StorageClientError(f'storage injoignable : {exc}') from exc
     if resp.status_code != 201:
         raise StorageClientError(
-            f"Ajout du membre '{email}' échoué (HTTP {resp.status_code}) : {resp.text[:200]}"
+            f"Ajout du membre '{email}' échoué (HTTP {resp.status_code}) : {resp.text[:200]}",
+            resp.status_code,
         )
     return resp.json()
 
@@ -277,3 +305,158 @@ def remove_member(namespace: str, email: str) -> None:
         raise StorageClientError(
             f"Retrait du membre '{email}' échoué (HTTP {resp.status_code})."
         )
+
+
+# ── Hiérarchie des partages (chantier « storage-hierarchie », contrat I1) ───
+#
+# Arborescence voulue dans storage :
+#   traitement-de-fichiers-compils        conteneur (settings.STORAGE_NAMESPACE),
+#    │                                    propriété du compte de service (I0)
+#    ├─ tdfc-<hex>                        fichier isolé : un partage à lui
+#    └─ tdfc-d-<hex>                      un Dossier : ses fichiers non partagés
+#        └─ tdfc-<hex>                    fichier du dossier partagé à quelqu'un
+#
+# La hiérarchie n'est que de l'organisation (storage n'en tire aucun droit) :
+# elle ne doit jamais faire échouer un dépôt. `create_share` est la SEULE
+# fonction de ce module qui crée un partage.
+
+log = logging.getLogger(__name__)
+
+# Conteneur prêt, mémorisé par processus (chaque worker gunicorn a le sien).
+# Seul le succès est mémorisé : un conteneur indisponible est revérifié à la
+# création suivante (deux requêtes de plus, sans conséquence).
+_container_ready: dict[str, bool] = {'ok': False}
+
+_WARN_SANS_PARENT = ('storage : partage créé sans parent (conteneur indisponible '
+                     'ou rattachement refusé) ; à rattacher par rattacher_partages_storage.')
+
+
+def container_name() -> str:
+    return settings.STORAGE_NAMESPACE
+
+
+def container_status() -> str:
+    """Lecture seule : 'ok' (le conteneur nous appartient), 'absent' (n'existe
+    pas), 'indisponible' (existe sous un autre propriétaire, ou erreur)."""
+    try:
+        resp = requests.get(_shares_url(f'{container_name()}/members/'),
+                            headers=_headers(), timeout=_TIMEOUT)
+    except requests.RequestException:
+        return 'indisponible'
+    if resp.status_code == 200:
+        return 'ok'
+    if resp.status_code == 404:
+        return 'absent'
+    return 'indisponible'
+
+
+def ensure_container() -> bool:
+    """I1 étape 1. True si le conteneur nous appartient (existant ou créé)."""
+    if _container_ready['ok']:
+        return True
+    try:
+        statut = container_status()
+        if statut == 'absent':
+            resp = requests.post(_shares_url(), headers=_headers(),
+                                 data={'name': container_name()}, timeout=_TIMEOUT)
+            statut = 'ok' if resp.status_code == 201 else 'indisponible'
+    except (requests.RequestException, StorageClientError):
+        statut = 'indisponible'
+    if statut == 'ok':
+        _container_ready['ok'] = True
+    return statut == 'ok'
+
+
+def _post_share(data: dict) -> requests.Response:
+    try:
+        return requests.post(_shares_url(), headers=_headers(), data=data, timeout=_TIMEOUT)
+    except requests.RequestException as exc:
+        raise StorageClientError(f'storage injoignable : {type(exc).__name__}') from exc
+
+
+def _cles_400(resp: requests.Response) -> set[str]:
+    if resp.status_code != 400:
+        return set()
+    try:
+        corps = resp.json()
+    except ValueError:
+        return set()
+    return set(corps) if isinstance(corps, dict) else set()
+
+
+def create_share(name: str, parent: str | None = None) -> None:
+    """I1 — crée le partage `name` rattaché sous `parent` (par défaut : le
+    conteneur). Un 400 `name` (il existe déjà) est un succès. Si le conteneur
+    est indisponible ou que storage refuse le parent (400 `parent`), le partage
+    est créé à la racine et un avertissement FIXE est journalisé. Lève
+    StorageClientError pour toute autre erreur (le dépôt échoue alors)."""
+    parent = parent or container_name()
+    if ensure_container():
+        resp = _post_share({'name': name, 'parent': parent})
+        if resp.status_code == 201:
+            return
+        cles = _cles_400(resp)
+        if 'name' in cles:
+            return
+        if 'parent' not in cles:
+            raise StorageClientError(f'Création du partage refusée (HTTP {resp.status_code}).',
+                                     resp.status_code)
+    log.warning(_WARN_SANS_PARENT)
+    resp = _post_share({'name': name})
+    if resp.status_code == 201 or 'name' in _cles_400(resp):
+        return
+    raise StorageClientError(f'Création du partage refusée (HTTP {resp.status_code}).',
+                             resp.status_code)
+
+
+def delete_file(namespace: str, relative_path: str) -> None:
+    """Supprime un seul fichier d'un partage (fichier d'un Dossier : le partage
+    du dossier, lui, reste). 404 toléré."""
+    try:
+        resp = requests.delete(_files_url_in(namespace, f'content/{relative_path}'),
+                               headers=_headers(), timeout=_TIMEOUT)
+    except requests.RequestException as exc:
+        raise StorageClientError(f'storage injoignable : {type(exc).__name__}') from exc
+    if resp.status_code not in (204, 404):
+        raise StorageClientError(f'Suppression storage échouée (HTTP {resp.status_code}).',
+                                 resp.status_code)
+
+
+def owned_shares() -> dict[str, str | None]:
+    """{nom: parent} de chaque partage du compte de service — UN appel
+    `GET /api/shares/` (clé `owned`), contrat I3 v2."""
+    try:
+        resp = requests.get(_shares_url(), headers=_headers(), timeout=_TIMEOUT)
+    except requests.RequestException as exc:
+        raise StorageClientError(f'storage injoignable : {type(exc).__name__}') from exc
+    if resp.status_code != 200:
+        raise StorageClientError(f'Liste des partages refusée (HTTP {resp.status_code}).',
+                                 resp.status_code)
+    return {s['name']: s.get('parent') for s in resp.json().get('owned', [])}
+
+
+def list_files(namespace: str) -> dict[str, int]:
+    """{relative_path: taille} des fichiers d'un partage que l'on possède."""
+    try:
+        resp = requests.get(_files_url_in(namespace), headers=_headers(), timeout=_TIMEOUT)
+    except requests.RequestException as exc:
+        raise StorageClientError(f'storage injoignable : {type(exc).__name__}') from exc
+    if resp.status_code != 200:
+        raise StorageClientError(f'Liste des fichiers refusée (HTTP {resp.status_code}).',
+                                 resp.status_code)
+    return {f['relative_path']: int(f.get('size') or 0) for f in resp.json()}
+
+
+def set_parent(name: str, parent: str) -> bool:
+    """PATCH /api/shares/<name>/ {parent}. False si le partage n'existe pas
+    (404, ignoré par I3) ; StorageClientError sur 400/403 ou toute autre erreur."""
+    try:
+        resp = requests.patch(_shares_url(f'{name}/'), headers=_headers(),
+                              data={'parent': parent}, timeout=_TIMEOUT)
+    except requests.RequestException as exc:
+        raise StorageClientError(f'storage injoignable : {type(exc).__name__}') from exc
+    if resp.status_code == 200:
+        return True
+    if resp.status_code == 404:
+        return False
+    raise StorageClientError(f'Rattachement refusé (HTTP {resp.status_code}).', resp.status_code)

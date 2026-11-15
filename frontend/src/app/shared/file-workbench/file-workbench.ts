@@ -4,6 +4,7 @@ import { WorkFileStore } from '../../core/workfile-store.service';
 import { OperationRegistryService } from '../../core/operation-registry.service';
 import { KeycloakService } from '../../core/keycloak.service';
 import { FichierService } from '../../core/fichier.service';
+import { switchMap } from 'rxjs';
 import { OcrService } from '../../core/ocr.service';
 import {
   WorkFile,
@@ -307,7 +308,13 @@ export class FileWorkbenchComponent {
     fd.append('fichier', new File([file.blob], file.name, { type: file.mime }));
     fd.append('nom', file.name.replace(/\.[^.]+$/, ''));
     fd.append('type', kindToBackendType(file.kind));
-    this.fichierService.uploadFichier(fd).subscribe({
+    // Fichier groupé (images extraites d'une vidéo) : dans le dossier du groupe.
+    const envoi = file.group
+      ? this.fichierService.dossierPourGroupe(file.group).pipe(
+          switchMap((d) => { fd.append('dossier', String(d.id)); return this.fichierService.uploadFichier(fd); }),
+        )
+      : this.fichierService.uploadFichier(fd);
+    envoi.subscribe({
       next: () => this.flash(`« ${file.name} » envoyé au serveur.`),
       error: () => this.error.set(`Échec de l'envoi de « ${file.name} ».`),
     });

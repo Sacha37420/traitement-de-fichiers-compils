@@ -16,6 +16,28 @@
       <button type="button" class="tab" [class.active]="mode() === 'shared'" (click)="setMode('shared')">Partagés avec moi</button>
     </div>
 
+    @if (mode() === 'mine' && dossiers().length) {
+      <div class="mf-filter">
+        <label for="mf-dossier">Dossier</label>
+        <select id="mf-dossier" (change)="setFiltre($any($event.target).value)">
+          <option value="" [selected]="filtreValue() === ''">Tous mes fichiers</option>
+          <option value="aucun" [selected]="filtreValue() === 'aucun'">Hors dossier</option>
+          @for (d of dossiers(); track d.id) {
+            <option [value]="d.id" [selected]="filtreValue() === '' + d.id">{{ d.nom }} ({{ d.nb_fichiers }})</option>
+          }
+        </select>
+        @if (dossierCourant(); as d) {
+          @if (confirmDossier()) {
+            <span class="confirm">Supprimer « {{ d.nom }} » et ses {{ d.nb_fichiers }} fichier(s) ?</span>
+            <button type="button" class="btn btn-danger" (click)="confirmDeleteDossier(d)">Oui, supprimer</button>
+            <button type="button" class="btn btn-ghost" (click)="confirmDossier.set(false)">Annuler</button>
+          } @else {
+            <button type="button" class="btn btn-ghost" (click)="confirmDossier.set(true)">Supprimer le dossier</button>
+          }
+        }
+      </div>
+    }
+
     @if (message()) { <p class="mf-msg ok">{{ message() }}</p> }
     @if (error())   { <p class="mf-msg err">{{ error() }}</p> }
 
@@ -23,7 +45,9 @@
       <p class="muted">Chargement…</p>
     } @else if (!fichiers().length) {
       <div class="card mf-empty">
-        @if (mode() === 'mine') {
+        @if (mode() === 'mine' && filtre() !== null) {
+          <p>Aucun fichier dans cette sélection.</p>
+        } @else if (mode() === 'mine') {
           <p>Aucun fichier enregistré pour l'instant.</p>
           <a class="btn btn-primary" routerLink="/atelier">Aller à l'atelier</a>
         } @else {
@@ -37,6 +61,7 @@
             <tr>
               <th>Nom</th>
               <th>Type</th>
+              @if (mode() === 'mine') { <th>Dossier</th> }
               <th>Taille</th>
               <th>{{ mode() === 'mine' ? 'Ajouté le' : 'Propriétaire' }}</th>
               <th class="actions-col">Actions</th>
@@ -47,6 +72,7 @@
               <tr>
                 <td class="fname" [title]="f.nom">{{ f.nom }}</td>
                 <td><span class="badge">{{ f.type }}</span></td>
+                @if (mode() === 'mine') { <td class="fdir" [title]="f.dossier?.nom ?? ''">{{ f.dossier?.nom ?? '—' }}</td> }
                 <td>{{ formatSize(f.taille_fichier) }}</td>
                 <td>{{ mode() === 'mine' ? formatDate(f.date_upload) : f.proprietaire }}</td>
                 <td class="actions-col">
@@ -69,7 +95,7 @@
 
               @if (mode() === 'mine' && isSharing(f.id)) {
                 <tr class="share-row">
-                  <td colspan="5">
+                  <td colspan="6">
                     <div class="share-panel">
                       <div class="share-add">
                         <input type="email" placeholder="email@exemple.com"

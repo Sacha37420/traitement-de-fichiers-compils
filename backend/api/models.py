@@ -3,6 +3,28 @@ from django.db import models
 from .fields import EncryptedTextField
 
 
+class Dossier(models.Model):
+    """Regroupement de fichiers d'un même propriétaire (ex. les images extraites
+    d'une vidéo). Côté storage, un dossier est UN partage `tdfc-d-<hex>`
+    (rattaché au conteneur de l'app) qui contient directement ses fichiers non
+    partagés, sous des noms lisibles ; son seul membre est le propriétaire.
+    Un fichier du dossier partagé à quelqu'un passe dans un partage à lui,
+    enfant de celui du dossier : le destinataire n'est jamais membre du partage
+    du dossier (il lirait tout le dossier). Contrat storage-hierarchie, I2.
+    """
+    nom = models.CharField(max_length=200)
+    proprietaire = models.CharField(max_length=255, db_index=True)
+    storage_namespace = models.CharField(max_length=64, unique=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'dossiers'
+        ordering = ['-date_creation']
+
+    def __str__(self):
+        return self.nom
+
+
 class Fichier(models.Model):
     """Métadonnées d'un fichier, appartenant à une personne (email Keycloak).
 
@@ -44,6 +66,17 @@ class Fichier(models.Model):
     storage_namespace = models.CharField(max_length=64, blank=True, default='')
     fichier_type_mime = models.CharField(max_length=100)
     proprietaire = models.CharField(max_length=255, db_index=True, default='')
+    # Dossier du fichier (null : fichier isolé). PROTECT : supprimer un dossier
+    # passe par la vue, qui supprime d'abord ses fichiers (octets compris).
+    # Le fichier est dans le partage du dossier tant que
+    # storage_namespace == dossier.storage_namespace ; partagé à quelqu'un, il a
+    # son propre partage (enfant de celui du dossier) et reste dans le dossier.
+    dossier = models.ForeignKey(Dossier, null=True, blank=True, on_delete=models.PROTECT,
+                                related_name='fichiers')
+
+    @property
+    def dans_partage_du_dossier(self) -> bool:
+        return bool(self.dossier_id) and self.storage_namespace == self.dossier.storage_namespace
 
     class Meta:
         db_table = 'fichiers'

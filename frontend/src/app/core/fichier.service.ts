@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
+import { Observable, shareReplay, throwError } from 'rxjs';
 import { apiUrl } from './env';
 
 /** Fichier tel que renvoyé par le backend (stockage propriétaire, sans traitement). */
@@ -22,7 +22,20 @@ export interface Fichier {
    * repasser par ce backend pour la lire, storage refait le contrôle d'accès.
    */
   fichier_url: string | null;
+  /** Dossier du fichier — renseigné pour le propriétaire uniquement (null sinon). */
+  dossier: { id: number; nom: string } | null;
 }
+
+/** Dossier de fichiers (ex. les images extraites d'une vidéo). */
+export interface Dossier {
+  id: number;
+  nom: string;
+  date_creation: string;
+  nb_fichiers: number;
+}
+
+/** Filtre de la liste : un dossier (id), 'aucun' (hors dossier), ou rien. */
+export type FiltreDossier = number | 'aucun' | null;
 
 export interface PaginatedResponse<T> {
   count: number;
@@ -39,16 +52,19 @@ export interface PaginatedResponse<T> {
 @Injectable({ providedIn: 'root' })
 export class FichierService {
   private http = inject(HttpClient);
+  /** Dossier créé pour chaque groupe pendant cette session (un seul par groupe). */
+  private dossiersDeGroupe = new Map<string, Observable<Dossier>>();
 
   private get base(): string {
     return apiUrl();
   }
 
   /** Liste mes fichiers stockés sur le serveur. */
-  getMesFichiers(params: { type?: string; page?: number } = {}): Observable<PaginatedResponse<Fichier>> {
+  getMesFichiers(params: { type?: string; page?: number; dossier?: FiltreDossier } = {}): Observable<PaginatedResponse<Fichier>> {
     let httpParams = new HttpParams();
     if (params.type) httpParams = httpParams.set('type', params.type);
     if (params.page) httpParams = httpParams.set('page', params.page);
+    if (params.dossier !== null && params.dossier !== undefined) httpParams = httpParams.set('dossier', params.dossier);
     return this.http.get<PaginatedResponse<Fichier>>(`${this.base}/api/fichiers/`, { params: httpParams });
   }
 
@@ -70,6 +86,36 @@ export class FichierService {
       return throwError(() => new Error('Ce fichier ne peut pas être téléchargé (stockage indisponible).'));
     }
     return this.http.get(fichier.fichier_url, { responseType: 'blob' });
+  }
+
+  /** Mes dossiers, avec leur nombre de fichiers. */
+  getDossiers(): Observable<Dossier[]> {
+    return this.http.get<Dossier[]>(`${this.base}/api/dossiers/`);
+  }
+
+  createDossier(nom: string): Observable<Dossier> {
+    return this.http.post<Dossier>(`${this.base}/api/dossiers/`, { nom });
+  }
+
+  /** Supprime un dossier ET tous ses fichiers. */
+  deleteDossier(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/dossiers/${id}/`);
+  }
+
+  /**
+   * Dossier du groupe `nom`, créé au premier envoi d'un fichier de ce groupe
+   * pendant la session. Partagé entre envois simultanés (l'atelier envoie tous
+   * les fichiers d'un coup) : un seul POST par groupe. Oublié en cas d'échec,
+   * pour qu'un nouvel envoi réessaie.
+   */
+  dossierPourGroupe(nom: string): Observable<Dossier> {
+    let d = this.dossiersDeGroupe.get(nom);
+    if (!d) {
+      d = this.createDossier(nom.slice(0, 200)).pipe(shareReplay(1));
+      this.dossiersDeGroupe.set(nom, d);
+      d.subscribe({ error: () => this.dossiersDeGroupe.delete(nom) });
+    }
+    return d;
   }
 
   /** Supprime un de mes fichiers. */

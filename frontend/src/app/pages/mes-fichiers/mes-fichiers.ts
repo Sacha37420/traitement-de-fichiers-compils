@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { FichierService, Fichier } from '../../core/fichier.service';
+import { Dossier, FichierService, Fichier, FiltreDossier } from '../../core/fichier.service';
 import { WorkFileStore } from '../../core/workfile-store.service';
 import { KeycloakService } from '../../core/keycloak.service';
 import { workFileFromBlob } from '../../core/work-file.model';
@@ -39,12 +39,58 @@ export class MesFichiersComponent implements OnInit {
   private sharing = signal<number | null>(null);
   shareEmail = signal('');
 
+  // ── Dossiers (filtre de « Mes fichiers ») ───────────────────────────────
+  dossiers = signal<Dossier[]>([]);
+  filtre = signal<FiltreDossier>(null);
+  confirmDossier = signal(false);
+  /** Valeur du <select> : '' (tous), 'aucun', ou l'id du dossier. */
+  filtreValue = computed(() => { const f = this.filtre(); return f === null ? '' : String(f); });
+  dossierCourant = computed(() => {
+    const f = this.filtre();
+    return typeof f === 'number' ? this.dossiers().find((d) => d.id === f) ?? null : null;
+  });
+
   totalPages = computed(() => Math.max(1, Math.ceil(this.count() / this.pageSize)));
 
   get isAuthenticated(): boolean { return this.kc.isAuthenticated; }
 
   ngOnInit(): void {
-    if (this.isAuthenticated) this.load();
+    if (this.isAuthenticated) { this.load(); this.loadDossiers(); }
+  }
+
+  loadDossiers(): void {
+    this.fichierService.getDossiers().subscribe({
+      next: (list) => {
+        this.dossiers.set(list);
+        const f = this.filtre();
+        if (typeof f === 'number' && !list.some((d) => d.id === f)) { this.filtre.set(null); this.page.set(1); this.load(); }
+      },
+      error: () => this.dossiers.set([]),
+    });
+  }
+
+  setFiltre(value: string): void {
+    const f: FiltreDossier = value === '' ? null : value === 'aucun' ? 'aucun' : Number(value);
+    if (f === this.filtre()) return;
+    this.filtre.set(f);
+    this.confirmDossier.set(false);
+    this.page.set(1);
+    this.load();
+  }
+
+  confirmDeleteDossier(d: Dossier): void {
+    this.confirmDossier.set(false);
+    this.error.set('');
+    this.fichierService.deleteDossier(d.id).subscribe({
+      next: () => {
+        this.flash(`Dossier « ${d.nom} » et ses fichiers supprimés.`);
+        this.filtre.set(null);
+        this.page.set(1);
+        this.load();
+        this.loadDossiers();
+      },
+      error: () => this.error.set(`Suppression du dossier « ${d.nom} » impossible.`),
+    });
   }
 
   setMode(m: Mode): void {
@@ -60,7 +106,7 @@ export class MesFichiersComponent implements OnInit {
     this.loading.set(true);
     this.error.set('');
     const req = this.mode() === 'mine'
-      ? this.fichierService.getMesFichiers({ page: this.page() })
+      ? this.fichierService.getMesFichiers({ page: this.page(), dossier: this.filtre() })
       : this.fichierService.getPartagesAvecMoi({ page: this.page() });
     req.subscribe({
       next: (res) => {
@@ -114,6 +160,7 @@ export class MesFichiersComponent implements OnInit {
         this.flash(`« ${f.nom} » supprimé.`);
         if (this.fichiers().length === 1 && this.page() > 1) this.page.set(this.page() - 1);
         this.load();
+        if (f.dossier) this.loadDossiers();
       },
       error: () => this.error.set(`Suppression de « ${f.nom} » impossible.`),
     });
